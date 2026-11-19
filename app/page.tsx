@@ -8,13 +8,13 @@ type Status = "idle" | "working" | "done";
 
 // مواقع المكاتب ومقاعد غرفة الاجتماعات (بالنسبة المئوية داخل أرضية المكتب)
 const DESKS: Record<AgentId, { x: number; y: number }> = {
-  rami: { x: 12, y: 22 },
+  musab: { x: 12, y: 22 },
   kareem: { x: 12, y: 72 },
   mona: { x: 40, y: 72 },
   omar: { x: 40, y: 22 },
 };
 const MEETING_SEATS: Record<AgentId, { x: number; y: number }> = {
-  rami: { x: 70, y: 32 },
+  musab: { x: 70, y: 32 },
   kareem: { x: 88, y: 32 },
   mona: { x: 70, y: 66 },
   omar: { x: 88, y: 66 },
@@ -32,7 +32,7 @@ export default function OfficePage() {
   const [goal, setGoal] = useState("");
   const [topic, setTopic] = useState("");
   const [statuses, setStatuses] = useState<Record<AgentId, Status>>({
-    rami: "idle", kareem: "idle", mona: "idle", omar: "idle",
+    musab: "idle", kareem: "idle", mona: "idle", omar: "idle",
   });
   const [inMeeting, setInMeeting] = useState(false);
   const [busy, setBusy] = useState<"task" | "meeting" | null>(null);
@@ -40,7 +40,7 @@ export default function OfficePage() {
   const [meeting, setMeeting] = useState<MeetingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const setAll = (s: Status) => setStatuses({ rami: s, kareem: s, mona: s, omar: s });
+  const setAll = (s: Status) => setStatuses({ musab: s, kareem: s, mona: s, omar: s });
 
   async function dispatchTask() {
     if (!goal.trim()) return;
@@ -58,7 +58,7 @@ export default function OfficePage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setResult(data);
-      const next: Record<AgentId, Status> = { rami: "done", kareem: "idle", mona: "idle", omar: "idle" };
+      const next: Record<AgentId, Status> = { musab: "done", kareem: "idle", mona: "idle", omar: "idle" };
       for (const d of data.deliverables as TaskResult["deliverables"]) next[d.agentId] = "done";
       setStatuses(next);
     } catch (e) {
@@ -97,7 +97,7 @@ export default function OfficePage() {
     <main className="mx-auto w-full max-w-6xl p-4 md:p-8 space-y-6">
       <header>
         <h1 className="text-2xl md:text-3xl font-bold">🏢 المكتب الافتراضي</h1>
-        <p className="text-sm opacity-70">رامي يوزّع المهام على الفريق ويرسل التقرير إلى Microsoft Teams</p>
+        <p className="text-sm opacity-70">مصعب يوزّع المهام على الفريق ويرسل التقرير إلى Microsoft Teams</p>
       </header>
 
       {/* أرضية المكتب */}
@@ -133,7 +133,7 @@ export default function OfficePage() {
 
       <div className="grid gap-4 md:grid-cols-2">
         <section className="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 p-4 space-y-3">
-          <h2 className="font-bold">📋 مهمة جديدة لرامي</h2>
+          <h2 className="font-bold">📋 مهمة جديدة لمصعب</h2>
           <textarea
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
@@ -205,7 +205,7 @@ export default function OfficePage() {
       {result && (
         <section className="space-y-3">
           <div className="rounded-2xl border border-blue-300 dark:border-blue-800 bg-white dark:bg-zinc-900 p-4">
-            <h2 className="font-bold mb-2">🧑‍💼 ملخص رامي</h2>
+            <h2 className="font-bold mb-2">🧑‍💼 ملخص مصعب</h2>
             <pre className="whitespace-pre-wrap text-sm leading-7 font-sans">{result.managerSummary}</pre>
             <p className="mt-2 text-xs opacity-60">
               {result.teamsNotified ? "✅ أُرسل التقرير إلى Teams" : "لم يُرسل إلى Teams (تحقق من TEAMS_WEBHOOK_URL)"}

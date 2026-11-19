@@ -4,15 +4,15 @@
 
 | الوكيل | الدور |
 |---|---|
-| 🧑‍💼 رامي | المدير العام: يقسم الهدف ويوزع المهام ويلخص النتائج |
+| 🧑‍💼 مصعب | المدير العام: يقسم الهدف ويوزع المهام ويلخص النتائج |
 | 📣 كريم | مشتري الإعلانات |
 | 🎯 منى | أخصائية مسارات التحويل وصفحات الهبوط |
 | 📝 عمر | المساعد التنفيذي: الجداول والمحاضر |
 
 وثلاث طرق للربط مع Teams:
 
-1. **تقارير تلقائية** (`/api/dispatch-task`): عند انتهاء الفريق يرسل رامي بطاقة Adaptive Card إلى قناة Teams.
-2. **بوت ثنائي** (`/api/teams-bot`): تكتب `@Rami جهز لي خطة إعلانية` داخل Teams، فيرد فوراً بالاستلام ثم يرسل التقرير الكامل في القناة.
+1. **تقارير تلقائية** (`/api/dispatch-task`): عند انتهاء الفريق يرسل مصعب بطاقة Adaptive Card إلى قناة Teams.
+2. **بوت ثنائي** (`/api/teams-bot`): تكتب `@Musab جهز لي خطة إعلانية` داخل Teams، فيرد فوراً بالاستلام ثم يرسل التقرير الكامل في القناة.
 3. **زر اجتماع الفريق** (`/api/team-meeting`): ينشئ اجتماع Teams حقيقياً عبر Microsoft Graph، ويولّد محضر نقاش الفريق ويرسله للقناة.
 
 ## التشغيل محلياً
@@ -28,7 +28,7 @@ npm run dev
 ## 1) تقارير Teams عبر Workflows
 
 1. في Teams افتح القناة (مثلاً `AI-Office-Updates`) ← `•••` ← **Workflows**.
-2. اختر قالب **Post to a channel when a webhook request is received** وسمّه `Rami GM Notifier`.
+2. اختر قالب **Post to a channel when a webhook request is received** وسمّه `Musab GM Notifier`.
 3. انسخ الرابط وضعه في `TEAMS_WEBHOOK_URL`.
 
 تعمل حتى على localhost لأن الخادم هو من يرسل للـ Teams.
@@ -38,7 +38,7 @@ npm run dev
 يتطلب رابطاً عاماً بـ HTTPS (انشر على Vercel، أو استخدم ngrok للتجربة).
 
 1. في Teams: الفريق ← **Manage team** ← **Apps** ← **Create an outgoing webhook**.
-2. الاسم: `Rami`، الرابط: `https://your-domain.com/api/teams-bot`.
+2. الاسم: `Musab`، الرابط: `https://your-domain.com/api/teams-bot`.
 3. سيظهر **Security token** مرة واحدة فقط: ضعه في `TEAMS_OUTGOING_WEBHOOK_SECRET`.
 
 **ملاحظات مهمة تم التعامل معها في الكود:**
@@ -80,7 +80,7 @@ Grant-CsApplicationAccessPolicy -PolicyName VirtualOffice-Policy -Identity "<AZU
 ```
 lib/agents.ts          تعريف الوكلاء الأربعة
 lib/llm.ts             عميل Groq
-lib/orchestrator.ts    رامي يخطط ← الفريق ينفذ بالتوازي ← رامي يلخص
+lib/orchestrator.ts    مصعب يخطط ← الفريق ينفذ بالتوازي ← مصعب يلخص
 lib/teamsNotifier.ts   بطاقات Teams (مع تقليص الحجم تحت حد 28KB)
 lib/teamsAuth.ts       التحقق من توقيع HMAC
 lib/graph.ts           رمز Entra وإنشاء الاجتماعات

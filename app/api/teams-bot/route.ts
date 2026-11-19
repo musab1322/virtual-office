@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   }
 
   const goal = cleanText(body.text);
-  if (!goal) return reply("أهلاً بك! اكتب المهمة التي تريد من الفريق تنفيذها بعد @Rami.");
+  if (!goal) return reply("أهلاً بك! اكتب المهمة التي تريد من الفريق تنفيذها بعد @Musab.");
 
   if (!process.env.TEAMS_WEBHOOK_URL) {
     return reply(
@@ -52,6 +52,6 @@ export async function POST(req: Request) {
 
   const who = body.from?.name ? ` يا ${body.from.name}` : "";
   return reply(
-    `✅ استلمت المهمة${who}: **${goal}**\n\nوزعتها على الفريق، وسيصلك التقرير الكامل في هذه القناة خلال دقيقة تقريباً. — رامي`
+    `✅ استلمت المهمة${who}: **${goal}**\n\nوزعتها على الفريق، وسيصلك التقرير الكامل في هذه القناة خلال دقيقة تقريباً. — مصعب`
   );
 }

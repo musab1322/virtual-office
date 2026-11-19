@@ -80,7 +80,7 @@ function buildCompletionCard(
     [
       text("✅ تقرير إنجاز المهام — المكتب الافتراضي", { weight: "Bolder", size: "Large" }),
       text(`**الهدف:** ${goal}`),
-      text(`**ملخص رامي (المدير العام):**\n\n${managerSummary.slice(0, 2000)}`),
+      text(`**ملخص مصعب (المدير العام):**\n\n${managerSummary.slice(0, 2000)}`),
       ...agentBlocks,
     ],
     [{ type: "Action.OpenUrl", title: "فتح المكتب الافتراضي", url: appUrl() }]

@@ -24,7 +24,7 @@ interface Plan {
 async function makePlan(goal: string): Promise<Plan> {
   const raw = await chat(
     [
-      { role: "system", content: OFFICE_AGENTS.rami.systemPrompt },
+      { role: "system", content: OFFICE_AGENTS.musab.systemPrompt },
       {
         role: "user",
         content: `الهدف: "${goal}"
@@ -55,7 +55,7 @@ async function runAgent(agentId: AgentId, goal: string, subtask: string): Promis
       { role: "system", content: agent.systemPrompt },
       {
         role: "user",
-        content: `الهدف العام من المدير رامي: "${goal}"\nمهمتك: ${subtask}\n\nسلّم مخرجاً عملياً جاهزاً للاستخدام.`,
+        content: `الهدف العام من المدير مصعب: "${goal}"\nمهمتك: ${subtask}\n\nسلّم مخرجاً عملياً جاهزاً للاستخدام.`,
       },
     ]);
   } catch (e) {
@@ -70,7 +70,7 @@ async function summarize(goal: string, deliverables: Deliverable[]): Promise<str
     .join("\n\n");
   return chat(
     [
-      { role: "system", content: OFFICE_AGENTS.rami.systemPrompt },
+      { role: "system", content: OFFICE_AGENTS.musab.systemPrompt },
       {
         role: "user",
         content: `الهدف: "${goal}"\n\nهذه مخرجات الفريق:\n${digest}\n\nاكتب ملخصاً تنفيذياً لصاحب العمل في 5 نقاط كحد أقصى، مع الخطوة التالية المقترحة.`,
