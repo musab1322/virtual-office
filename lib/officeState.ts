@@ -57,6 +57,8 @@ export interface ProfileEdit {
   specialty?: string;
   style?: string; // أسلوب الكلام والتعامل
   departmentId?: string | null;
+  gender?: "m" | "f"; // الجنس (يغيّر الشكل والصوت)
+  photo?: string; // صورة الشخصية (data URL مصغّرة) تُجسَّد على الوجه
   voice?: string; // صوت المكالمات (اختياري، وإلا يبقى الصوت الثابت الحالي)
 }
 
