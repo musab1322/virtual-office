@@ -372,6 +372,10 @@ function withDevelopment(prompt: string, notes: string[], learned: string[] = []
 export function parseTeamInput(raw: unknown): Map<string, TeamMember> {
   const out = new Map<string, TeamMember>();
   if (!Array.isArray(raw)) return out;
+  // إذا غيّر صاحب العمل اسم المدير العام يعرف الفريق كله الاسم الجديد
+  const mgr = raw.find((x) => (x as Record<string, unknown> | null)?.id === MANAGER_ID) as Record<string, unknown> | undefined;
+  const mgrName = clean(mgr?.name, 40);
+  const mgrNote = mgrName && mgrName !== OFFICE_AGENTS[MANAGER_ID].name ? `\nالمدير العام للوكلاء اسمه الآن ${mgrName} (بدلاً من مساعد).` : "";
   for (const item of raw.slice(0, 30)) {
     const r = (item ?? {}) as Record<string, unknown>;
     const id = clean(r.id, 40);
@@ -383,17 +387,22 @@ export function parseTeamInput(raw: unknown): Map<string, TeamMember> {
       : [];
     const style = clean(r.style, 400);
     const department = clean(r.department, 120);
-    const where = (p: string) => (department ? `${p}\nتعمل في ${department}.` : p);
+    const where = (p: string) => (department ? `${p}\nتعمل في ${department}.` : p) + (id === MANAGER_ID ? "" : mgrNote);
     if (id in OFFICE_AGENTS) {
       const a = OFFICE_AGENTS[id as AgentId];
       const name = clean(r.name, 40) || a.name;
       const role = clean(r.role, 60) || a.role;
       const specialty = clean(r.specialty, 400);
-      // إذا عدّل صاحب العمل الاسم أو المسمى أو التخصص نبني التعليمات من جديد
+      const changed = name !== a.name || role !== a.role || !!specialty;
+      // المدير العام يحتفظ بتعليمات القيادة والتوزيع حتى لو تغيّر اسمه أو مسماه
       const base =
-        name !== a.name || role !== a.role || specialty
-          ? customSystemPrompt({ name, role, specialty: specialty || CORE_SPECIALTY[id] || role })
-          : a.systemPrompt;
+        id === MANAGER_ID
+          ? changed
+            ? `${a.systemPrompt.replaceAll(`أنت ${a.name}`, `أنت ${name}`)}\nاسمك الآن ${name}، ومسماك "${role}"، فقدّم نفسك بهذا الاسم دائماً.${specialty ? `\nتركيزك: ${specialty}.` : ""}`
+            : a.systemPrompt
+          : changed
+            ? customSystemPrompt({ name, role, specialty: specialty || CORE_SPECIALTY[id] || role })
+            : a.systemPrompt;
       out.set(id, { id, name, role, style: style || undefined, department: department || undefined, systemPrompt: withDevelopment(where(base), dev, learned) });
       continue;
     }
@@ -429,6 +438,12 @@ export function buildRoster(team: Map<string, TeamMember> | TeamMember[] = []): 
   const core = WORKER_IDS.map((id) => map.get(id) ?? coreMember(id));
   const extra = [...map.values()].filter((m) => m.id.startsWith("emp_"));
   return [...core, ...extra];
+}
+
+/** المدير العام كما عدّله صاحب العمل (الاسم والمسمى والأسلوب)، أو الأصل */
+export function managerMember(team: Map<string, TeamMember> | TeamMember[] = []): TeamMember {
+  const map = Array.isArray(team) ? new Map(team.map((m) => [m.id, m])) : team;
+  return map.get(MANAGER_ID) ?? coreMember(MANAGER_ID);
 }
 
 /** موظف واحد بالمعرّف (أساسي أو جديد) */

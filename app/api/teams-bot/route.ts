@@ -1,7 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { runTask } from "@/lib/orchestrator";
 import { isDbConfigured, loadState, updateState } from "@/lib/db";
-import { buildRoster, parseTeamInput } from "@/lib/agents";
+import { buildRoster, managerMember, parseTeamInput } from "@/lib/agents";
 import { teamInputFromState, withCoreOrg } from "@/lib/officeState";
 import { newId } from "@/lib/officeState";
 import { verifyTeamsHmac } from "@/lib/teamsAuth";
@@ -49,14 +49,17 @@ export async function POST(req: Request) {
     try {
       // مع قاعدة البيانات: الفريق يشمل الموظفين الجدد وتوجيهات التطوير
       let team;
+      let manager;
       if (isDbConfigured()) {
         const st = await loadState().catch(() => null);
         if (st) {
           const input = teamInputFromState(withCoreOrg(st));
-          team = buildRoster(parseTeamInput(input));
+          const parsed = parseTeamInput(input);
+          team = buildRoster(parsed);
+          manager = managerMember(parsed);
         }
       }
-      const result = await runTask(goal, team);
+      const result = await runTask(goal, team, manager);
       await notifyTeamsOnCompletion(result.goal, result.managerSummary, result.deliverables);
       // نسجل المهام في ملف كل موظف (إذا كانت قاعدة البيانات مفعلة)
       const now = new Date().toISOString();

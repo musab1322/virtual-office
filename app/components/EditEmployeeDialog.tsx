@@ -53,9 +53,9 @@ export default function EditEmployeeDialog({ person, onClose }: { person: Person
   const currentVoice = voiceFor({ id: person.id, gender });
 
   return (
-    <div className="fixed inset-0 z-[2050] grid place-items-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[2050] grid place-items-center bg-black/40 p-2 sm:p-4" onClick={onClose}>
       <form
-        className={`${card} max-h-[90vh] w-full max-w-lg space-y-3 overflow-auto shadow-xl`}
+        className={`${card} max-h-[92svh] w-full max-w-lg min-[1800px]:max-w-2xl space-y-3 overflow-auto shadow-xl`}
         onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault();

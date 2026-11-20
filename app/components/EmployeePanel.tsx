@@ -428,10 +428,10 @@ export default function EmployeePanel({
   return (
     <div className="fixed inset-0 z-[1900] flex justify-start bg-black/30" onClick={onClose}>
       <aside
-        className="h-full w-full max-w-xl space-y-4 overflow-auto bg-white dark:bg-zinc-900 p-4 shadow-2xl"
+        className="h-full w-full max-w-xl min-[1800px]:max-w-3xl space-y-4 overflow-auto bg-white dark:bg-zinc-900 p-3 sm:p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Avatar person={person} size={64} />
           <div className="flex-1">
             <div className="text-xl font-bold">{person.name}</div>
@@ -444,7 +444,7 @@ export default function EmployeePanel({
         <div className="flex flex-wrap gap-2">
           <button className="tb tb-green" onClick={() => onCall(false)}>📞 اتصال صوتي</button>
           <button className="tb tb-green" onClick={() => onCall(true)}>📹 اتصال فيديو</button>
-          <button className="tb tb-teal" onClick={onPrivateMeeting}>🔒 اجتماع خاص</button>
+          {!person.manager && <button className="tb tb-teal" onClick={onPrivateMeeting}>🔒 اجتماع خاص</button>}
           {isCustom && (
             <button
               className="tb"
@@ -457,7 +457,7 @@ export default function EmployeePanel({
             </button>
           )}
         </div>
-        <div className="flex gap-1 border-b border-black/10 dark:border-white/10">
+        <div className="flex gap-1 overflow-x-auto border-b border-black/10 dark:border-white/10">
           {(
             [
               ["tasks", "📋 المهام"],
@@ -468,7 +468,7 @@ export default function EmployeePanel({
             <button
               key={k}
               onClick={() => setTab(k)}
-              className={`-mb-px border-b-2 px-3 py-2 text-sm font-semibold ${tab === k ? "border-blue-600 text-blue-600" : "border-transparent opacity-60"}`}
+              className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold ${tab === k ? "border-blue-600 text-blue-600" : "border-transparent opacity-60"}`}
             >
               {label}
             </button>
