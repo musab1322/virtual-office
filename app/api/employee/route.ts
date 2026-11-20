@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { OFFICE_AGENTS, findMember, parseTeamInput, speakingStyle } from "@/lib/agents";
+import { MANAGER_ID, OFFICE_AGENTS, findMember, parseTeamInput, speakingStyle } from "@/lib/agents";
 import { chat, type ChatMessage } from "@/lib/llm";
 
 export const maxDuration = 120;
@@ -10,14 +10,14 @@ const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice
  * التعامل المباشر مع موظف واحد:
  * - chat: محادثة (نصية أو مكالمة صوتية عند mode = "call")
  * - task: تنفيذ مهمة أسندها صاحب العمل لهذا الموظف
- * - review: خطة تطوير لأداء الموظف يكتبها المدير مصعب
+ * - review: خطة تطوير لأداء الموظف يكتبها المدير العام مساعد
  * - learn: جلسة تطوير ذاتي يتعلم فيها الموظف مهارة جديدة في مجاله
  */
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const action = str(body.action, 20);
   const id = str(body.employeeId, 40);
-  const member = id === "musab" ? undefined : findMember(parseTeamInput(body.employees), id);
+  const member = id === MANAGER_ID ? undefined : findMember(parseTeamInput(body.employees), id);
   if (!member) return NextResponse.json({ error: "الموظف غير موجود" }, { status: 404 });
 
   try {
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
         [
           {
             role: "system",
-            content: `${member.systemPrompt}\n${speakingStyle(member.id, member.style)}\nأنت تتحدث الآن مباشرة مع صاحب العمل (مديرك). ${
+            content: `${member.systemPrompt}\n${speakingStyle(member.id, member.style)}\nأنت تتحدث الآن مباشرة مع الأستاذ مصعب (مدير إدارة الاتصال والتسويق). ${
               call
                 ? "هذه مكالمة صوتية سريعة مثل النقاش: رد بجملة أو جملتين قصيرتين فقط (أقل من 35 كلمة)، بلهجة سعودية طبيعية، بدون رموز أو قوائم أو أرقام نقاط. إذا كان الكلام غير واضح اطلب التوضيح بجملة واحدة."
                 : "أجب بإيجاز ووضوح."
@@ -75,7 +75,7 @@ export async function POST(req: Request) {
       });
       const raw = await chat(
         [
-          { role: "system", content: OFFICE_AGENTS.musab.systemPrompt },
+          { role: "system", content: OFFICE_AGENTS[MANAGER_ID].systemPrompt },
           {
             role: "user",
             content: `اكتب خطة تطوير لأداء الموظف ${member.name} (${member.role}).

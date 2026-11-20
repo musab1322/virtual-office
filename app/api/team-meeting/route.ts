@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
-import { OFFICE_AGENTS, buildRoster, parseTeamInput, type TeamMember } from "@/lib/agents";
+import { DEPUTY_ID, MANAGER_ID, OFFICE_AGENTS, buildRoster, parseTeamInput, type TeamMember } from "@/lib/agents";
 import { createTeamsOnlineMeeting, isGraphConfigured } from "@/lib/graph";
 import { chat } from "@/lib/llm";
 import { notifyTeamsMeeting } from "@/lib/teamsNotifier";
 
 export const maxDuration = 120;
 
-// نقاش محاكى بين الوكلاء ومحضر يصوغه عبدالعزيز (المساعد التنفيذي).
+// نقاش محاكى بين الوكلاء ومحضر تصوغه لطيفة (نائبة المدير للجودة والربط بين الإدارات).
 // ملاحظة: هذا محضر لنقاش الفريق الافتراضي، وليس تفريغاً للاجتماع الحقيقي على Teams.
 async function generateMeetingMinutes(topic: string, roster: TeamMember[]) {
-  const secretary = roster.find((m) => m.id === "omar") ?? roster[0];
+  const secretary = roster.find((m) => m.id === DEPUTY_ID) ?? roster[0];
   const participants = [
-    `- ${OFFICE_AGENTS.musab.name} (${OFFICE_AGENTS.musab.role}): يدير الاجتماع ويحدد الأولويات والجدول الزمني.`,
+    `- ${OFFICE_AGENTS[MANAGER_ID].name} (${OFFICE_AGENTS[MANAGER_ID].role}): يدير الاجتماع نيابة عن الأستاذ مصعب ويحدد الأولويات والجدول الزمني.`,
     ...roster.map((m) => `- ${m.name} (${m.role}): يشارك من زاوية تخصصه${m.id === secretary.id ? " ويكتب المحضر الرسمي" : ""}.`),
   ].join("\n");
   return chat(

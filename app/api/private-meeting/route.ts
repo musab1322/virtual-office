@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { findMember, parseTeamInput } from "@/lib/agents";
+import { MANAGER_ID, findMember, parseTeamInput } from "@/lib/agents";
 import { chat } from "@/lib/llm";
 
 export const maxDuration = 120;
 
-// اجتماع خاص (1:1) بين المدير مصعب وأحد الموظفين في الغرفة الخاصة
+// اجتماع خاص (1:1) بين الأستاذ مصعب وأحد الوكلاء في الغرفة الخاصة
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
     employeeId?: unknown;
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   const topic = typeof body.topic === "string" ? body.topic.trim().slice(0, 2000) : "";
   if (!topic) return NextResponse.json({ error: "اكتب موضوع الاجتماع الخاص" }, { status: 400 });
 
-  const member = employeeId === "musab" ? undefined : findMember(parseTeamInput(body.employees), employeeId);
+  const member = employeeId === MANAGER_ID ? undefined : findMember(parseTeamInput(body.employees), employeeId);
   if (!member) return NextResponse.json({ error: "الموظف غير موجود" }, { status: 404 });
 
   try {
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
         { role: "system", content: member.systemPrompt },
         {
           role: "user",
-          content: `أنت الآن في اجتماع خاص على انفراد مع المدير العام مصعب.
+          content: `أنت الآن في اجتماع خاص على انفراد مع الأستاذ مصعب (مدير إدارة الاتصال والتسويق).
 موضوع الاجتماع: "${topic}"
 
 تحدّث مباشرة مع مصعب بصيغة المتكلم: قدّم رأيك وما تحتاجه منه، ثم اختم بـ "الالتزامات" (ما ستنفذه أنت ومتى) و"المطلوب من مصعب".`,

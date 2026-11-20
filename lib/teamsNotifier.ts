@@ -80,7 +80,7 @@ function buildCompletionCard(
     [
       text("✅ تقرير إنجاز المهام — المكتب الافتراضي", { weight: "Bolder", size: "Large" }),
       text(`**الهدف:** ${goal}`),
-      text(`**ملخص مصعب (المدير العام):**\n\n${managerSummary.slice(0, 2000)}`),
+      text(`**خطة مساعد (المدير العام للوكلاء) بعد تدقيق لطيفة:**\n\n${managerSummary.slice(0, 2000)}`),
       ...agentBlocks,
     ],
     [{ type: "Action.OpenUrl", title: "فتح المكتب الافتراضي", url: appUrl() }]
@@ -111,7 +111,7 @@ export async function notifyTeamsMeeting(
     [
       text(`🎥 اجتماع الفريق: ${topic}`, { weight: "Bolder", size: "Large" }),
       ...(joinUrl ? [] : [text("لم يُنشأ رابط Teams (إعدادات Azure غير مكتملة).", { color: "Warning" })]),
-      text("📝 **محضر نقاش الفريق الافتراضي (إعداد عبدالعزيز):**"),
+      text("📝 **محضر نقاش الفريق الافتراضي (إعداد لطيفة):**"),
       text(minutes.slice(0, 15_000), { size: "Small" }),
     ],
     joinUrl ? [{ type: "Action.OpenUrl", title: "انضمام لاجتماع Teams", url: joinUrl }] : []

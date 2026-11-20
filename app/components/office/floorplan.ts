@@ -37,7 +37,7 @@ export const MEETING_DOOR = { out: v(5.8, -1.4), in: v(5.8, -3.0), gap: [5.2, 6.
 const SIDE_X = [7.5, 8.7, 9.9, 11.1, 12.3];
 const NEAR_Z = -4.95;
 const FAR_Z = -7.25;
-/** أول مقعد لمصعب (رأس الطاولة)، ثم الجانب القريب، ثم البعيد، ثم الرأس الآخر */
+/** أول مقعد للمدير العام (رأس الطاولة)، ثم الجانب القريب، ثم البعيد، ثم الرأس الآخر */
 export const MEETING_SEATS: Seat[] = [
   { room: "meeting", pos: v(13.6, -6.1), rot: -Math.PI / 2 },
   ...SIDE_X.map((x) => ({ room: "meeting" as const, pos: v(x, NEAR_Z), rot: Math.PI })),

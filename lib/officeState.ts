@@ -1,4 +1,4 @@
-import { WORKER_IDS, type CustomEmployee } from "@/lib/agents";
+import { CORE_UNIT_OF, CORE_UNITS, WORKER_IDS, type CustomEmployee } from "@/lib/agents";
 
 // حالة المكتب الكاملة: تُحفظ في المتصفح، وفي قاعدة البيانات عند توفرها
 export type TaskStatus = "pending" | "in_progress" | "done";
@@ -7,7 +7,7 @@ export interface OfficeTask {
   id: string;
   employeeId: string;
   title: string;
-  goal?: string; // الهدف العام إذا جاءت المهمة من توزيع مصعب
+  goal?: string; // الهدف العام إذا جاءت المهمة من توزيع مساعد
   source: "manager" | "direct" | "teams";
   status: TaskStatus;
   result?: string;
@@ -71,6 +71,7 @@ export interface OfficeState {
   learning: Record<string, LearningEntry[]>; // سجل التطوير الذاتي لكل موظف
   departments: Department[];
   profiles: Record<string, ProfileEdit>;
+  orgVersion?: number; // نسخة الهيكل الأساسي المزروع
 }
 
 export const emptyState = (): OfficeState => ({
@@ -122,15 +123,20 @@ export function normalizeState(raw: unknown): OfficeState {
     learning: r.learning && typeof r.learning === "object" ? r.learning : {},
     departments: Array.isArray(r.departments) ? r.departments : [],
     profiles: r.profiles && typeof r.profiles === "object" ? r.profiles : {},
+    orgVersion: typeof r.orgVersion === "number" ? r.orgVersion : 0,
   };
 }
+
+// لا نكرر كلمة "إدارة" إذا كانت جزءاً من الاسم (مثل: إدارة التسويق، وحدة النشر، القيادة التنفيذية)
+export const topLabel = (n: string) => (/^(إدارة|ادارة|وحدة|القيادة|قطاع)/.test(n) ? n : `إدارة ${n}`);
+export const subLabel = (n: string) => (/^(قسم|وحدة)/.test(n) ? n : `قسم ${n}`);
 
 /** وصف مكان الموظف في الهيكل التنظيمي، مثل: "قسم التصميم في إدارة التسويق" */
 export function departmentLabel(s: OfficeState, employeeId: string) {
   const d = s.departments.find((x) => x.id === s.profiles[employeeId]?.departmentId);
   if (!d) return "";
   const parent = d.parentId ? s.departments.find((x) => x.id === d.parentId) : null;
-  return parent ? `قسم ${d.name} في إدارة ${parent.name}` : `إدارة ${d.name}`;
+  return parent ? `${subLabel(d.name)} في ${topLabel(parent.name)}` : topLabel(d.name);
 }
 
 /** بيانات الفريق التي تُرسل للخادم (الملفات المعدّلة + التوجيهات + الخبرات + القسم) */
@@ -148,4 +154,21 @@ export function teamInputFromState(s: OfficeState) {
     };
   };
   return [...WORKER_IDS.map((id) => ({ id, ...extra(id) })), ...s.employees.map((e) => ({ ...e, ...extra(e.id) }))];
+}
+
+/** نسخة هيكل الجمعية (الإدارات والوحدات الأساسية وتوزيع الوكلاء عليها) */
+export const ORG_VERSION = 1;
+
+/** يزرع الهيكل التنظيمي الأساسي مرة واحدة دون المساس بما أضافه صاحب العمل */
+export function withCoreOrg(s: OfficeState): OfficeState {
+  if ((s.orgVersion ?? 0) >= ORG_VERSION) return s;
+  const departments = [
+    ...CORE_UNITS.filter((u) => !s.departments.some((d) => d.id === u.id)).map((u) => ({ id: u.id, name: u.name, parentId: null })),
+    ...s.departments,
+  ];
+  const profiles = { ...s.profiles };
+  for (const id of WORKER_IDS) {
+    if (!profiles[id]?.departmentId) profiles[id] = { ...profiles[id], departmentId: CORE_UNIT_OF[id] };
+  }
+  return { ...s, departments, profiles, orgVersion: ORG_VERSION };
 }

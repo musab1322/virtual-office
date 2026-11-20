@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { OFFICE_AGENTS, WORKER_IDS } from "@/lib/agents";
+import { MANAGER_ID, OFFICE_AGENTS, WORKER_IDS } from "@/lib/agents";
 import type { TaskResult } from "@/lib/orchestrator";
 import { addMeeting, addTasks, teamPayload, useOffice, useStorageMode } from "@/lib/officeStore";
 import type { CameraView, Person } from "./components/Office3D";
@@ -49,7 +49,7 @@ export default function OfficePage() {
   const [goal, setGoal] = useState("");
   const [topic, setTopic] = useState("");
   const [privateTopic, setPrivateTopic] = useState("");
-  const [privateGuest, setPrivateGuest] = useState<string>("kareem");
+  const [privateGuest, setPrivateGuest] = useState<string>("othman");
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
   const [mode, setMode] = useState<OfficeMode>({ kind: "desks" });
   const [busy, setBusy] = useState<"task" | "meeting" | "private" | null>(null);
@@ -69,15 +69,15 @@ export default function OfficePage() {
   // الفريق كاملاً: المدير أولاً، ثم الأساسيون، ثم الموظفون الجدد
   const people: Person[] = useMemo(
     () => [
-      ...(["musab", ...WORKER_IDS] as const).map((id) => {
+      ...[MANAGER_ID, ...WORKER_IDS].map((id) => {
         const a = OFFICE_AGENTS[id];
-        return { id, name: a.name, role: a.role, color: a.color, gender: a.gender, manager: id === "musab" };
+        return { id, name: a.name, role: a.role, color: a.color, gender: a.gender, manager: id === MANAGER_ID };
       }),
       ...employees.map((e) => ({ id: e.id, name: e.name, role: e.role, color: e.color, gender: e.gender })),
     ].map((p) => {
       // تعديلات صاحب العمل على الاسم والمسمى والصوت والقسم
       const edit = office.profiles[p.id];
-      if (p.id === "musab") return p;
+      if (p.id === MANAGER_ID) return p;
       return {
         ...p,
         name: edit?.name || p.name,
@@ -132,7 +132,7 @@ export default function OfficePage() {
           doneAt: new Date().toISOString(),
         }))
       );
-      const next: Record<string, Status> = { musab: "done" };
+      const next: Record<string, Status> = { [MANAGER_ID]: "done" };
       for (const d of data.deliverables) next[d.agentId] = "done";
       setStatuses(next);
     } catch (e) {
@@ -179,9 +179,9 @@ export default function OfficePage() {
     setBusy("private");
     setError(null);
     setPrivateResult(null);
-    setMode({ kind: "private", guestId: guest }); // مصعب والموظف يذهبان للغرفة الخاصة
+    setMode({ kind: "private", guestId: guest }); // المدير والموظف يذهبان للغرفة الخاصة
     goTo("private");
-    setAll("working", ["musab", guest]);
+    setAll("working", [MANAGER_ID, guest]);
     try {
       const data = await postJSON<PrivateResult>("/api/private-meeting", {
         employeeId: guest,
@@ -192,10 +192,10 @@ export default function OfficePage() {
       addMeeting({
         kind: "private",
         topic: data.topic,
-        participants: [OFFICE_AGENTS.musab.name, data.name],
+        participants: ["مصعب", data.name],
         minutes: data.reply,
       });
-      setAll("done", ["musab", guest]);
+      setAll("done", [MANAGER_ID, guest]);
     } catch (e) {
       setError((e as Error).message);
       setAll("idle");
@@ -216,7 +216,7 @@ export default function OfficePage() {
   // الضغط على موظف: تقريب الكاميرا وفتح ملفه
   function openPerson(id: string) {
     goTo(`agent:${id}`);
-    if (id !== "musab") setPanelFor(id);
+    if (id !== MANAGER_ID) setPanelFor(id);
   }
 
   return (
@@ -224,7 +224,7 @@ export default function OfficePage() {
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">🏢 المكتب الافتراضي</h1>
-          <p className="text-sm opacity-70">مصعب يوزّع المهام على الفريق ويرسل التقرير إلى Microsoft Teams</p>
+          <p className="text-sm opacity-70">فريق وكلاء إدارة الاتصال والتسويق: مساعد يوزّع، الإدارات تنفّذ، لطيفة تدقق، والخطة تصلك وإلى Microsoft Teams</p>
         </div>
         <span className="rounded-full bg-black/5 dark:bg-white/10 px-3 py-1 text-xs" title="مكان حفظ بيانات المكتب">
           {storage === "cloud"
@@ -315,7 +315,7 @@ export default function OfficePage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <section className={`${card} space-y-3`}>
-          <h2 className="font-bold">📋 مهمة جديدة لمصعب</h2>
+          <h2 className="font-bold">📋 توجيه جديد لمساعد</h2>
           <textarea
             ref={taskRef}
             value={goal}
@@ -482,16 +482,21 @@ export default function OfficePage() {
       {result && (
         <section className="space-y-3">
           <div className="rounded-2xl border border-blue-300 dark:border-blue-800 bg-white dark:bg-zinc-900 p-4">
-            <h2 className="font-bold mb-2">🧑‍💼 ملخص مصعب</h2>
+            <h2 className="font-bold mb-2">
+              🧭 خطة مساعد الجاهزة للتنفيذ
+              {result.flow && <span className="ms-2 rounded-full bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 text-xs font-normal">المسار: {result.flow}</span>}
+            </h2>
             <pre className="whitespace-pre-wrap text-sm leading-7 font-sans">{result.managerSummary}</pre>
             <p className="mt-2 text-xs opacity-60">
               {result.teamsNotified ? "✅ أُرسل التقرير إلى Teams. " : ""}سُجّلت المهام في ملف كل موظف.
             </p>
           </div>
           {result.deliverables.map((d) => (
-            <details key={d.agentId} className={card} open>
+            <details key={`${d.agentId}-${d.stage ?? ""}`} className={card} open={d.stage !== "execute"}>
               <summary className="cursor-pointer font-semibold">
-                <span className="tb-dot" style={{ ["--c" as string]: byId[d.agentId]?.color }} /> {d.agentName} ({d.role}) — {d.subtask}
+                <span className="tb-dot" style={{ ["--c" as string]: byId[d.agentId]?.color }} />{" "}
+                {d.stage === "review" ? "✅ تدقيق: " : d.stage === "department" ? "🏢 خلاصة الإدارة: " : ""}
+                {d.agentName} ({d.role}) — {d.subtask}
               </summary>
               <pre className="mt-3 whitespace-pre-wrap text-sm leading-7 font-sans">{d.deliverable}</pre>
             </details>

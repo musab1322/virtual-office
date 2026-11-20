@@ -122,7 +122,7 @@ export function Character({
 }) {
   const { id, gender } = person;
   const { hash: h, skin, redShemagh } = personLook(person);
-  // البشت لمصعب فقط (المدير العام)
+  // البشت للمدير العام للوكلاء فقط
   const bisht = !!person.manager;
   const hasBeard = gender === "m";
 
