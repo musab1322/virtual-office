@@ -23,7 +23,7 @@ type Tab = "tasks" | "chat" | "growth";
 type Busy = (id: string, s: "idle" | "working" | "done") => void;
 
 const SOURCE: Record<OfficeTask["source"], string> = {
-  manager: "من توزيع مصعب",
+  manager: "من توزيع مساعد",
   direct: "مسندة مباشرة",
   teams: "من Teams",
 };
@@ -370,7 +370,7 @@ function GrowthTab({ person }: { person: Person }) {
 
       <section className="space-y-2">
         <button className="tb tb-violet" onClick={getReview} disabled={busy}>
-          {busy ? "مصعب يراجع الأداء…" : "🧭 خطة تطوير من مصعب"}
+          {busy ? "مساعد يراجع الأداء…" : "🧭 خطة تطوير من مساعد"}
         </button>
         {err && <p className="text-xs text-red-600">{err}</p>}
         {review && (

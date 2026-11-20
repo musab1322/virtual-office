@@ -8,6 +8,7 @@ import {
   normalizeState,
   trimState,
   teamInputFromState,
+  withCoreOrg,
   type ChatMsg,
   type Department,
   type ProfileEdit,
@@ -99,6 +100,9 @@ async function start() {
     mode = "local";
   }
   emit();
+  // الهيكل التنظيمي الأساسي للجمعية (مرة واحدة)
+  const seeded = withCoreOrg(state);
+  if (seeded !== state) update(() => seeded);
 }
 
 function subscribe(cb: () => void) {

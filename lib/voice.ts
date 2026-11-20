@@ -1,5 +1,18 @@
 // اختيار صوت سعودي لكل موظف (أصوات نموذج Orpheus العربي على Groq)
-const CORE_VOICES: Record<string, string> = { kareem: "sultan", omar: "abdullah", mona: "noura", musab: "fahad" };
+const CORE_VOICES: Record<string, string> = {
+  musaed: "fahad",
+  othman: "sultan",
+  faisal: "abdullah",
+  abdulrahman: "fahad",
+  khalid: "sultan",
+  majed: "abdullah",
+  latifa: "lulwa",
+  ruqayya: "noura",
+  sahar: "aisha",
+  haya: "noura",
+  muneera: "lulwa",
+  reem: "aisha",
+};
 const MALE = ["fahad", "abdullah", "sultan"];
 const FEMALE = ["lulwa", "aisha", "noura"];
 

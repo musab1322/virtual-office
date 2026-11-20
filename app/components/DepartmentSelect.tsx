@@ -1,6 +1,6 @@
 "use client";
 
-import type { Department } from "@/lib/officeState";
+import { subLabel, topLabel, type Department } from "@/lib/officeState";
 import { input } from "./ui";
 
 /** قائمة اختيار الإدارة/القسم، مرتبة: كل إدارة ثم أقسامها */
@@ -19,13 +19,13 @@ export default function DepartmentSelect({
       <option value="">— بدون إدارة —</option>
       {tops.map((t) => [
         <option key={t.id} value={t.id}>
-          🏢 إدارة {t.name}
+          🏢 {topLabel(t.name)}
         </option>,
         ...departments
           .filter((d) => d.parentId === t.id)
           .map((d) => (
             <option key={d.id} value={d.id}>
-              {"   "}↳ قسم {d.name}
+              {"   "}↳ {subLabel(d.name)}
             </option>
           )),
       ])}

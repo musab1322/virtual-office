@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { addDepartment, removeDepartment, renameDepartment, setProfile, useOffice } from "@/lib/officeStore";
-import type { Department } from "@/lib/officeState";
+import { subLabel, topLabel, type Department } from "@/lib/officeState";
 import Avatar from "./Avatar";
 import type { Person } from "./office/Character";
 import { card, input } from "./ui";
@@ -77,7 +77,7 @@ function Member({ p, onOpen }: { p: Person; onOpen: (id: string) => void }) {
           .flatMap((t) => [t, ...deps.filter((d) => d.parentId === t.id)])
           .map((d) => (
             <option key={d.id} value={d.id}>
-              {d.parentId ? `↳ ${d.name}` : `إدارة ${d.name}`}
+              {d.parentId ? `↳ ${d.name}` : topLabel(d.name)}
             </option>
           ))}
       </select>
@@ -85,14 +85,14 @@ function Member({ p, onOpen }: { p: Person; onOpen: (id: string) => void }) {
   );
 }
 
-function EditableName({ dep, prefix }: { dep: Department; prefix: string }) {
+function EditableName({ dep, icon }: { dep: Department; icon: string }) {
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(dep.name);
   if (!editing)
     return (
       <span className="inline-flex items-center gap-1">
         <b>
-          {prefix} {dep.name}
+          {icon} {dep.parentId ? subLabel(dep.name) : topLabel(dep.name)}
         </b>
         <button className="text-xs opacity-50 hover:opacity-100" title="تعديل الاسم" onClick={() => setEditing(true)}>
           ✏️
@@ -140,7 +140,7 @@ function Unit({
   return (
     <div className="space-y-2 rounded-xl border border-black/10 dark:border-white/10 p-3">
       <div className="flex items-center justify-between gap-2">
-        <EditableName dep={dep} prefix="🏢 إدارة" />
+        <EditableName dep={dep} icon="🏢" />
         <DeleteBtn id={dep.id} what="الإدارة وأقسامها" />
       </div>
       <div className="flex flex-wrap gap-2">
@@ -151,7 +151,7 @@ function Unit({
       {subs.map((s) => (
         <div key={s.id} className="ms-3 space-y-1 border-s-2 border-black/10 dark:border-white/10 ps-3">
           <div className="flex items-center justify-between gap-2 text-sm">
-            <EditableName dep={s} prefix="📁 قسم" />
+            <EditableName dep={s} icon="📁" />
             <DeleteBtn id={s.id} what="القسم" />
           </div>
           <div className="flex flex-wrap gap-2">
