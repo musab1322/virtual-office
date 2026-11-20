@@ -5,6 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { RoundedBox } from "@react-three/drei";
 import * as THREE from "three";
 import { routeBetween, type Seat } from "./floorplan";
+import { personLook } from "../look";
 
 export type AgentStatus = "idle" | "working" | "done";
 
@@ -17,7 +18,6 @@ export interface Person {
   manager?: boolean;
 }
 
-const SKIN = ["#c98f65", "#b57a52", "#d9a47c", "#a46a45"];
 const THOBE = "#f7f7f4";
 const ABAYA = "#16161a";
 const SIT_HIP = 0.5;
@@ -46,11 +46,6 @@ function getShemaghTexture() {
   return shemaghTex;
 }
 
-function hash(s: string) {
-  let h = 0;
-  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) | 0;
-  return Math.abs(h);
-}
 
 function lerpAngle(a: number, b: number, t: number) {
   let diff = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
@@ -124,11 +119,9 @@ export function Character({
   registerAnchor: (id: string, el: THREE.Object3D | null) => void;
 }) {
   const { id, gender } = person;
-  const h = hash(id);
-  const skin = SKIN[h % SKIN.length];
-  // كل الرجال بنفس طلّة مصعب: شماغ أحمر وبشت أسود بحاشية ذهبية
-  const redShemagh = true;
-  const bisht = gender === "m";
+  const { hash: h, skin, redShemagh } = personLook(person);
+  // البشت لمصعب فقط (المدير العام)
+  const bisht = !!person.manager;
   const hasBeard = gender === "m";
 
   const [initialSeat] = useState(seat); // الموضع الأولي فقط؛ الحركة بعدها تتم في useFrame

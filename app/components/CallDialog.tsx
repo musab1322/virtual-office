@@ -235,7 +235,7 @@ export default function CallDialog({
         </div>
         <div className="relative grid min-h-[300px] place-items-center bg-gradient-to-b from-zinc-800 to-zinc-900 px-6 pb-6">
           <div className="flex flex-col items-center gap-3 text-center">
-            <Avatar gender={person.gender} color={person.color} size={150} speaking={phase === "speaking"} />
+            <Avatar person={person} size={150} speaking={phase === "speaking"} />
             <div className="text-xl font-bold">{person.name}</div>
             <div className="text-sm opacity-70">{person.role}</div>
             <div className="text-sm text-emerald-300">{phaseText[phase]}</div>

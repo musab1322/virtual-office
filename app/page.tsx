@@ -384,7 +384,7 @@ export default function OfficePage() {
                 className="flex items-center gap-3 rounded-xl border border-black/10 dark:border-white/10 px-3 py-2 text-start text-sm hover:bg-black/[.03] dark:hover:bg-white/5"
                 style={{ borderInlineStartWidth: 4, borderInlineStartColor: p.color }}
               >
-                <Avatar gender={p.gender} color={p.color} size={42} />
+                <Avatar person={p} size={42} />
                 <div className="flex-1">
                   <div className="font-semibold">
                     {p.name} <span className="text-xs font-normal opacity-60">• {perf.level}</span>

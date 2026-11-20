@@ -391,7 +391,7 @@ export default function EmployeePanel({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3">
-          <Avatar gender={person.gender} color={person.color} size={64} />
+          <Avatar person={person} size={64} />
           <div className="flex-1">
             <div className="text-xl font-bold">{person.name}</div>
             <div className="text-sm opacity-70">{person.role}</div>
