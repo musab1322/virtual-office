@@ -11,6 +11,7 @@ const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice
  * - chat: محادثة (نصية أو مكالمة صوتية عند mode = "call")
  * - task: تنفيذ مهمة أسندها صاحب العمل لهذا الموظف
  * - review: خطة تطوير لأداء الموظف يكتبها المدير مصعب
+ * - learn: جلسة تطوير ذاتي يتعلم فيها الموظف مهارة جديدة في مجاله
  */
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -94,6 +95,35 @@ ${tasks.join("\n") || "لا توجد مهام مسجلة بعد."}
         improvements: (Array.isArray(plan.improvements) ? plan.improvements : []).map((x: unknown) => str(x, 300)).slice(0, 6),
         suggestedNotes: (Array.isArray(plan.suggestedNotes) ? plan.suggestedNotes : []).map((x: unknown) => str(x, 300)).slice(0, 6),
       });
+    }
+
+    if (action === "learn") {
+      const prev = (Array.isArray(body.previousTopics) ? body.previousTopics : []).map((x) => str(x, 120)).filter(Boolean).slice(-15);
+      const tasks = (Array.isArray(body.tasks) ? body.tasks : []).slice(-8).map((t) => {
+        const r = (t ?? {}) as Record<string, unknown>;
+        const fb = str(r.feedback, 200);
+        return `- ${str(r.title, 160)}${typeof r.rating === "number" ? ` (تقييم ${r.rating}/5)` : ""}${fb ? ` — ملاحظة المدير: ${fb}` : ""}`;
+      });
+      const raw = await chat(
+        [
+          { role: "system", content: member.systemPrompt },
+          {
+            role: "user",
+            content: `حان وقت جلسة التطوير الذاتي اليومية. اختر مهارة أو أسلوباً عملياً واحداً جديداً في مجال تخصصك (${member.role}) يرفع جودة عملك، وتعلّمه بعمق.
+${prev.length ? `مواضيع تعلمتها سابقاً (لا تكررها، وابنِ عليها):\n${prev.map((p) => `- ${p}`).join("\n")}` : ""}
+${tasks.length ? `آخر مهامك (استفد منها في اختيار ما ينقصك):\n${tasks.join("\n")}` : ""}
+
+أعد JSON فقط بهذا الشكل:
+{"topic": "عنوان المهارة في أقل من 10 كلمات", "summary": "ما تعلمته ولماذا يهم، في 2-3 جمل", "takeaways": ["قاعدة عملية قصيرة ستطبقها في عملك", "...", "..."]}`,
+          },
+        ],
+        { json: true, temperature: 0.7, maxTokens: 700 }
+      );
+      const r = JSON.parse(raw);
+      const takeaways = (Array.isArray(r.takeaways) ? r.takeaways : []).map((x: unknown) => str(x, 250)).filter(Boolean).slice(0, 4);
+      const topic = str(r.topic, 120);
+      if (!topic || !takeaways.length) throw new Error("لم يكتمل التعلم، حاول مرة أخرى");
+      return NextResponse.json({ topic, summary: str(r.summary, 600), takeaways });
     }
 
     return NextResponse.json({ error: "إجراء غير معروف" }, { status: 400 });

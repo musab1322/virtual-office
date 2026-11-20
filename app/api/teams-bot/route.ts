@@ -55,6 +55,7 @@ export async function POST(req: Request) {
           const input = ids.map((id) => ({
             ...(st.employees.find((e) => e.id === id) ?? { id }),
             development: st.development[id] ?? [],
+            learned: (st.learning?.[id] ?? []).flatMap((l) => l.takeaways).slice(-12),
           }));
           team = buildRoster(parseTeamInput(input));
         }

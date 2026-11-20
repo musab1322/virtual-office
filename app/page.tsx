@@ -9,6 +9,7 @@ import type { CameraView, Person } from "./components/Office3D";
 import AddEmployeeDialog from "./components/AddEmployeeDialog";
 import CallDialog from "./components/CallDialog";
 import EmployeePanel, { performance } from "./components/EmployeePanel";
+import { useAutoLearning, useLearningNow } from "@/lib/selfLearning";
 import MeetingsArchive from "./components/MeetingsArchive";
 import { card, input, postJSON } from "./components/ui";
 import Avatar from "./components/Avatar";
@@ -79,6 +80,8 @@ export default function OfficePage() {
   const seats = useMemo(() => seatsFor(ids, mode), [ids, mode]);
   const homeDesk = useMemo(() => Object.fromEntries(ids.slice(1).map((id, i) => [id, i])), [ids]);
   const staff = people.slice(1);
+  useAutoLearning(useMemo(() => staff.map((p) => p.id), [staff]));
+  const learningNow = useLearningNow();
   const deskFull = employees.length >= MAX_EMPLOYEES - WORKER_IDS.length;
 
   const goTo = (v: CameraView) => {
@@ -376,7 +379,7 @@ export default function OfficePage() {
         </div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {staff.map((p) => {
-            const perf = performance(office.tasks.filter((t) => t.employeeId === p.id));
+            const perf = performance(office.tasks.filter((t) => t.employeeId === p.id), office.learning[p.id]?.length ?? 0);
             return (
               <button
                 key={p.id}
@@ -393,8 +396,10 @@ export default function OfficePage() {
                   <div className="mt-0.5 text-xs">
                     ✅ {perf.done} منجزة • 🕒 {perf.pending} لم تُنجز
                     {perf.avg ? ` • ⭐ ${perf.avg.toFixed(1)}` : ""}
+                    {(office.learning[p.id]?.length ?? 0) > 0 && ` • 📚 ${office.learning[p.id].length}`}
                   </div>
                 </div>
+                {learningNow === p.id && <span title="يتعلم مهارة جديدة الآن">📚</span>}
                 {statuses[p.id] === "working" && <span>⏳</span>}
               </button>
             );

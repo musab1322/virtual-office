@@ -86,12 +86,16 @@ export interface TeamInput {
   role?: string;
   specialty?: string;
   development?: string[];
+  learned?: string[];
 }
 
 /** توجيهات المدير لتطوير الموظف تُضاف إلى تعليماته */
-function withDevelopment(prompt: string, notes: string[]) {
-  if (!notes.length) return prompt;
-  return `${prompt}\n\nتوجيهات المدير لتطوير أدائك (التزم بها دائماً):\n${notes.map((n) => `- ${n}`).join("\n")}`;
+function withDevelopment(prompt: string, notes: string[], learned: string[] = []) {
+  let out = prompt;
+  if (notes.length) out += `\n\nتوجيهات المدير لتطوير أدائك (التزم بها دائماً):\n${notes.map((n) => `- ${n}`).join("\n")}`;
+  if (learned.length)
+    out += `\n\nخبرات اكتسبتها من تطويرك الذاتي في مجالك (طبّقها في عملك):\n${learned.map((n) => `- ${n}`).join("\n")}`;
+  return out;
 }
 
 /**
@@ -107,16 +111,19 @@ export function parseTeamInput(raw: unknown): Map<string, TeamMember> {
     const dev = Array.isArray(r.development)
       ? r.development.map((d) => clean(d, 300)).filter(Boolean).slice(0, 15)
       : [];
+    const learned = Array.isArray(r.learned)
+      ? r.learned.map((d) => clean(d, 300)).filter(Boolean).slice(-12)
+      : [];
     if (id in OFFICE_AGENTS) {
       const a = OFFICE_AGENTS[id as AgentId];
-      out.set(id, { id, name: a.name, role: a.role, systemPrompt: withDevelopment(a.systemPrompt, dev) });
+      out.set(id, { id, name: a.name, role: a.role, systemPrompt: withDevelopment(a.systemPrompt, dev, learned) });
       continue;
     }
     const name = clean(r.name, 40);
     const role = clean(r.role, 60);
     const specialty = clean(r.specialty, 400);
     if (!/^emp_[a-z0-9]+$/i.test(id) || !name || !role || out.has(id)) continue;
-    out.set(id, { id, name, role, systemPrompt: withDevelopment(customSystemPrompt({ name, role, specialty }), dev) });
+    out.set(id, { id, name, role, systemPrompt: withDevelopment(customSystemPrompt({ name, role, specialty }), dev, learned) });
   }
   return out;
 }

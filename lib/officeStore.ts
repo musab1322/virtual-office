@@ -8,6 +8,7 @@ import {
   normalizeState,
   trimState,
   type ChatMsg,
+  type LearningEntry,
   type MeetingRecord,
   type OfficeState,
   type OfficeTask,
@@ -69,7 +70,7 @@ function schedulePush() {
 }
 
 const hasContent = (s: OfficeState) =>
-  s.employees.length + s.tasks.length + s.meetings.length + Object.keys(s.chats).length > 0;
+  s.employees.length + s.tasks.length + s.meetings.length + Object.keys(s.chats).length + Object.keys(s.learning).length > 0;
 
 async function start() {
   state = readLocal();
@@ -186,10 +187,21 @@ export function setDevelopment(employeeId: string, notes: string[]) {
   update((s) => ({ ...s, development: { ...s.development, [employeeId]: notes } }));
 }
 
-/** بيانات الفريق التي تُرسل للخادم مع كل طلب (الموظفون الجدد + توجيهات التطوير) */
+export function addLearning(employeeId: string, entry: Omit<LearningEntry, "id" | "at">) {
+  const e: LearningEntry = { ...entry, id: newId("learn"), at: new Date().toISOString() };
+  update((s) => ({ ...s, learning: { ...s.learning, [employeeId]: [...(s.learning[employeeId] ?? []), e] } }));
+  return e;
+}
+
+/** أحدث الخبرات المكتسبة من التطوير الذاتي (تُرسل مع تعليمات الموظف) */
+export function learnedSkills(employeeId: string, s: OfficeState = state) {
+  return (s.learning[employeeId] ?? []).flatMap((l) => l.takeaways).slice(-12);
+}
+
+/** بيانات الفريق التي تُرسل للخادم مع كل طلب (الموظفون الجدد + توجيهات التطوير + الخبرات المكتسبة) */
 export function teamPayload(s: OfficeState = state) {
   return [
-    ...WORKER_IDS.map((id) => ({ id, development: s.development[id] ?? [] })),
-    ...s.employees.map((e) => ({ ...e, development: s.development[e.id] ?? [] })),
+    ...WORKER_IDS.map((id) => ({ id, development: s.development[id] ?? [], learned: learnedSkills(id, s) })),
+    ...s.employees.map((e) => ({ ...e, development: s.development[e.id] ?? [], learned: learnedSkills(e.id, s) })),
   ];
 }
