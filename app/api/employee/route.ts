@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { MANAGER_ID, OFFICE_AGENTS, findMember, parseTeamInput, speakingStyle, type AgentId } from "@/lib/agents";
+import { OFFICE_AGENTS, findMember, managerMember, parseTeamInput, speakingStyle, type AgentId } from "@/lib/agents";
 import { chat, research, type ChatMessage } from "@/lib/llm";
 
 export const maxDuration = 120;
@@ -17,7 +17,8 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const action = str(body.action, 20);
   const id = str(body.employeeId, 40);
-  const member = id === MANAGER_ID ? undefined : findMember(parseTeamInput(body.employees), id);
+  const team = parseTeamInput(body.employees);
+  const member = findMember(team, id);
   if (!member) return NextResponse.json({ error: "الموظف غير موجود" }, { status: 404 });
 
   try {
@@ -75,7 +76,7 @@ export async function POST(req: Request) {
       });
       const raw = await chat(
         [
-          { role: "system", content: OFFICE_AGENTS[MANAGER_ID].systemPrompt },
+          { role: "system", content: managerMember(team).systemPrompt },
           {
             role: "user",
             content: `اكتب خطة تطوير لأداء الموظف ${member.name} (${member.role}).

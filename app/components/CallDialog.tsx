@@ -426,8 +426,8 @@ export default function CallDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-[2100] grid place-items-center bg-black/70 p-4">
-      <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl bg-zinc-900 text-white shadow-2xl">
+    <div className="fixed inset-0 z-[2100] grid place-items-center bg-black/70 sm:p-4">
+      <div className="relative flex h-full max-h-[100svh] w-full max-w-2xl min-[1800px]:max-w-5xl flex-col overflow-auto bg-zinc-900 text-white shadow-2xl sm:h-auto sm:rounded-3xl">
         <div className="flex items-center justify-between px-5 py-3 text-sm opacity-80">
           <span>📞 مكالمة {withVideo ? "فيديو" : "صوتية"} مع {person.name}</span>
           <span dir="ltr">{mm}:{ss}</span>
@@ -435,7 +435,7 @@ export default function CallDialog({
         {withVideo ? (
           // مكالمة فيديو: صورة الموظف الحية تملأ الشاشة، ومعاينتك في الزاوية
           <div
-            className="relative aspect-video w-full overflow-hidden"
+            className="relative aspect-[3/4] w-full overflow-hidden sm:aspect-video"
             style={{ background: `radial-gradient(circle at 50% 35%, ${person.color}55, #1f2937 55%, #0b0f17)` }}
           >
             <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent" />
@@ -538,7 +538,7 @@ export default function CallDialog({
             </form>
           )}
         </div>
-        <div className="flex justify-center gap-3 pb-5">
+        <div className="mt-auto flex justify-center gap-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <button onClick={toggleMute} className={`call-btn ${muted ? "bg-white text-zinc-900" : "bg-white/15"}`} title="كتم">
             {muted ? "🔇" : "🎙️"}
           </button>

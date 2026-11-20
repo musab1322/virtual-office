@@ -77,7 +77,6 @@ export default function OfficePage() {
     ].map((p) => {
       // تعديلات صاحب العمل على الاسم والمسمى والصوت والقسم
       const edit = office.profiles[p.id];
-      if (p.id === MANAGER_ID) return p;
       return {
         ...p,
         name: edit?.name || p.name,
@@ -218,15 +217,15 @@ export default function OfficePage() {
   // الضغط على موظف: تقريب الكاميرا وفتح ملفه
   function openPerson(id: string) {
     goTo(`agent:${id}`);
-    if (id !== MANAGER_ID) setPanelFor(id);
+    setPanelFor(id);
   }
 
   return (
-    <main className="mx-auto w-full max-w-7xl p-4 md:p-6 space-y-4">
+    <main className="mx-auto w-full max-w-7xl min-[1800px]:max-w-[100rem] p-3 sm:p-4 md:p-6 space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">🏢 المكتب الافتراضي</h1>
-          <p className="text-sm opacity-70">فريق وكلاء إدارة الاتصال والتسويق: مساعد يوزّع، الإدارات تنفّذ، لطيفة تدقق، والخطة تصلك وإلى Microsoft Teams</p>
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">🏢 المكتب الافتراضي</h1>
+          <p className="text-xs sm:text-sm opacity-70">فريق وكلاء إدارة الاتصال والتسويق: {people[0].name} يوزّع، الإدارات تنفّذ، لطيفة تدقق، والخطة تصلك وإلى Microsoft Teams</p>
         </div>
         <span className="rounded-full bg-black/5 dark:bg-white/10 px-3 py-1 text-xs" title="مكان حفظ بيانات المكتب">
           {storage === "cloud"
@@ -282,7 +281,7 @@ export default function OfficePage() {
       </nav>
 
       {/* المكتب ثلاثي الأبعاد */}
-      <section className="relative h-[66vh] min-h-[440px] overflow-hidden rounded-2xl border border-black/10 dark:border-white/10 shadow-sm">
+      <section className="relative h-[58svh] min-h-[320px] sm:h-[62vh] sm:min-h-[420px] lg:h-[66vh] min-[1800px]:h-[70vh] overflow-hidden rounded-2xl border border-black/10 dark:border-white/10 shadow-sm">
         <Office3D
           people={people}
           seats={seats}
@@ -295,7 +294,7 @@ export default function OfficePage() {
           onEmptyDesk={() => !deskFull && setShowAdd(true)}
         />
         {sel && (
-          <div className="absolute bottom-3 right-3 w-64 rounded-xl bg-white/95 dark:bg-zinc-900/95 p-3 text-sm shadow-lg backdrop-blur space-y-2">
+          <div className="absolute bottom-3 right-3 left-3 sm:left-auto sm:w-64 rounded-xl bg-white/95 dark:bg-zinc-900/95 p-3 text-sm shadow-lg backdrop-blur space-y-2">
             <div>
               <div className="font-bold">{sel.name}</div>
               <div className="opacity-70">{sel.role}</div>
@@ -303,21 +302,20 @@ export default function OfficePage() {
                 {statuses[sel.id] === "working" ? "⏳ يعمل الآن" : statuses[sel.id] === "done" ? "✅ أنجز مهمته" : "متاح"}
               </div>
             </div>
-            {!sel.manager && (
-              <button className="tb tb-primary" onClick={() => setPanelFor(sel.id)}>
-                📂 ملف الموظف
-              </button>
-            )}
+            <button className="tb tb-primary" onClick={() => setPanelFor(sel.id)}>
+              📂 {sel.manager ? "ملف المدير العام" : "ملف الموظف"}
+            </button>
           </div>
         )}
-        <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-black/40 px-2 py-1 text-[11px] text-white">
-          اسحب للتدوير • عجلة الفأرة للتكبير • اضغط على موظف أو مكتب شاغر
+        <div className={`pointer-events-none absolute bottom-3 left-3 rounded-lg bg-black/40 px-2 py-1 text-[0.6875rem] text-white ${sel ? "hidden sm:block" : ""}`}>
+          <span className="hint-mouse">اسحب للتدوير • عجلة الفأرة للتكبير • اضغط على موظف أو مكتب شاغر</span>
+          <span className="hint-touch">اسحب بإصبع للتدوير • قرّب بإصبعين • المس موظفاً أو مكتباً شاغراً</span>
         </div>
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <section className={`${card} space-y-3`}>
-          <h2 className="font-bold">📋 توجيه جديد لمساعد</h2>
+          <h2 className="font-bold">📋 توجيه جديد لـ{people[0].name}</h2>
           <textarea
             ref={taskRef}
             value={goal}
@@ -392,8 +390,8 @@ export default function OfficePage() {
             ➕ إضافة موظف
           </button>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {staff.map((p) => {
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 min-[1800px]:grid-cols-4">
+          {people.map((p) => {
             const perf = performance(office.tasks.filter((t) => t.employeeId === p.id), office.learning[p.id]?.length ?? 0);
             return (
               <button
@@ -485,7 +483,7 @@ export default function OfficePage() {
         <section className="space-y-3">
           <div className="rounded-2xl border border-blue-300 dark:border-blue-800 bg-white dark:bg-zinc-900 p-4">
             <h2 className="font-bold mb-2">
-              🧭 خطة مساعد الجاهزة للتنفيذ
+              🧭 خطة {people[0].name} الجاهزة للتنفيذ
               {result.flow && <span className="ms-2 rounded-full bg-blue-100 dark:bg-blue-900/50 px-2 py-0.5 text-xs font-normal">المسار: {result.flow}</span>}
             </h2>
             <pre className="whitespace-pre-wrap text-sm leading-7 font-sans">{result.managerSummary}</pre>

@@ -1,4 +1,4 @@
-import { CORE_UNIT_OF, CORE_UNITS, WORKER_IDS, type CustomEmployee } from "@/lib/agents";
+import { CORE_UNIT_OF, CORE_UNITS, MANAGER_ID, WORKER_IDS, type CustomEmployee } from "@/lib/agents";
 
 // حالة المكتب الكاملة: تُحفظ في المتصفح، وفي قاعدة البيانات عند توفرها
 export type TaskStatus = "pending" | "in_progress" | "done";
@@ -155,7 +155,7 @@ export function teamInputFromState(s: OfficeState) {
       learned: (s.learning?.[id] ?? []).flatMap((l) => l.takeaways).slice(-12),
     };
   };
-  return [...WORKER_IDS.map((id) => ({ id, ...extra(id) })), ...s.employees.map((e) => ({ ...e, ...extra(e.id) }))];
+  return [...[MANAGER_ID, ...WORKER_IDS].map((id) => ({ id, ...extra(id) })), ...s.employees.map((e) => ({ ...e, ...extra(e.id) }))];
 }
 
 /** نسخة هيكل الجمعية (الإدارات والوحدات الأساسية وتوزيع الوكلاء عليها) */

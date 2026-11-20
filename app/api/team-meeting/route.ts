@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { DEPUTY_ID, MANAGER_ID, OFFICE_AGENTS, buildRoster, parseTeamInput, type TeamMember } from "@/lib/agents";
+import { DEPUTY_ID, buildRoster, managerMember, parseTeamInput, type TeamMember } from "@/lib/agents";
 import { createTeamsOnlineMeeting, isGraphConfigured } from "@/lib/graph";
 import { chat } from "@/lib/llm";
 import { notifyTeamsMeeting } from "@/lib/teamsNotifier";
@@ -8,10 +8,10 @@ export const maxDuration = 120;
 
 // نقاش محاكى بين الوكلاء ومحضر تصوغه لطيفة (نائبة المدير للجودة والربط بين الإدارات).
 // ملاحظة: هذا محضر لنقاش الفريق الافتراضي، وليس تفريغاً للاجتماع الحقيقي على Teams.
-async function generateMeetingMinutes(topic: string, roster: TeamMember[]) {
+async function generateMeetingMinutes(topic: string, roster: TeamMember[], manager: TeamMember) {
   const secretary = roster.find((m) => m.id === DEPUTY_ID) ?? roster[0];
   const participants = [
-    `- ${OFFICE_AGENTS[MANAGER_ID].name} (${OFFICE_AGENTS[MANAGER_ID].role}): يدير الاجتماع نيابة عن الأستاذ مصعب ويحدد الأولويات والجدول الزمني.`,
+    `- ${manager.name} (${manager.role}): يدير الاجتماع نيابة عن الأستاذ مصعب ويحدد الأولويات والجدول الزمني.`,
     ...roster.map((m) => `- ${m.name} (${m.role}): يشارك من زاوية تخصصه${m.id === secretary.id ? " ويكتب المحضر الرسمي" : ""}.`),
   ].join("\n");
   return chat(
@@ -37,13 +37,15 @@ ${participants}
 
 export async function POST(req: Request) {
   const { topic: rawTopic, employees } = await req.json().catch(() => ({}));
-  const roster = buildRoster(parseTeamInput(employees));
+  const team = parseTeamInput(employees);
+  const roster = buildRoster(team);
+  const manager = managerMember(team);
   const topic = (typeof rawTopic === "string" && rawTopic.trim()) || "اجتماع الفريق الأسبوعي ومراجعة المهام";
 
   // ننشئ الاجتماع ونولّد المحضر بالتوازي
   const [meetingResult, minutesResult] = await Promise.allSettled([
     isGraphConfigured() ? createTeamsOnlineMeeting(topic) : Promise.resolve(null),
-    generateMeetingMinutes(topic, roster),
+    generateMeetingMinutes(topic, roster, manager),
   ]);
 
   const meeting = meetingResult.status === "fulfilled" ? meetingResult.value : null;

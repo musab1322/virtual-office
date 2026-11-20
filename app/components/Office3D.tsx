@@ -54,17 +54,23 @@ function CameraRig({
   nonce: number;
   seats: Record<string, Seat>;
 }) {
-  const { camera, controls } = useThree();
+  const { camera, controls, size } = useThree();
   const animating = useRef(true);
+  // الشاشات الطولية (الجوال) والضيقة: نبعد الكاميرا حتى يظهر المكتب كاملاً
+  const aspect = size.width / Math.max(1, size.height);
+  const fit = Math.min(2.3, Math.max(1, 1.5 / aspect));
   const agentSeat = view.startsWith("agent:") ? seats[view.slice(6)] : undefined;
   const goal = useMemo(() => {
     if (view.startsWith("agent:")) {
       const [x, , z] = agentSeat?.pos ?? [0, 0, 0];
-      return { pos: new THREE.Vector3(x + 2.8, 3.6, z + 4.8), target: new THREE.Vector3(x, 0.9, z) };
+      const f = Math.min(fit, 1.6);
+      return { pos: new THREE.Vector3(x + 2.8 * f, 0.9 + 2.7 * f, z + 4.8 * f), target: new THREE.Vector3(x, 0.9, z) };
     }
     const p = CAMERA_PRESETS[view as RoomView];
-    return { pos: new THREE.Vector3(...p.pos), target: new THREE.Vector3(...p.target) };
-  }, [view, agentSeat]);
+    const target = new THREE.Vector3(...p.target);
+    const pos = new THREE.Vector3(...p.pos).sub(target).multiplyScalar(fit).add(target);
+    return { pos, target };
+  }, [view, agentSeat, fit]);
 
   useEffect(() => {
     animating.current = true;

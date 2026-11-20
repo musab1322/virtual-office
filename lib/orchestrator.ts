@@ -1,4 +1,4 @@
-import { DEPUTY_ID, MANAGER_ID, OFFICE_AGENTS, buildRoster, type TeamMember } from "@/lib/agents";
+import { DEPUTY_ID, OFFICE_AGENTS, buildRoster, managerMember, type TeamMember } from "@/lib/agents";
 import { chat, research } from "@/lib/llm";
 
 // ─── آلية العمل (Workflow) ───────────────────────────────────────────
@@ -81,7 +81,7 @@ function detectFlows(goal: string) {
 const digestOf = (items: Deliverable[], per = 1800) =>
   items.map((d) => `### ${d.agentName} (${d.role})\nالمهمة: ${d.subtask}\n${d.deliverable.slice(0, per)}`).join("\n\n");
 
-async function makePlan(goal: string, roster: TeamMember[], flows: typeof FLOWS) {
+async function makePlan(goal: string, roster: TeamMember[], flows: typeof FLOWS, manager: TeamMember) {
   const assignable = roster.filter((m) => m.id !== DEPUTY_ID && !(m.id in BACKGROUND));
   const team = assignable
     .map((m) => `- ${m.id}: ${m.name} (${m.role}${m.department ? ` — ${m.department}` : ""})`)
@@ -92,7 +92,7 @@ async function makePlan(goal: string, roster: TeamMember[], flows: typeof FLOWS)
   try {
     const raw = await chat(
       [
-        { role: "system", content: OFFICE_AGENTS[MANAGER_ID].systemPrompt },
+        { role: "system", content: manager.systemPrompt },
         {
           role: "user",
           content: `توجيه الأستاذ مصعب: "${goal}"
@@ -149,7 +149,7 @@ async function runAgent(
     {
       role: "user" as const,
       content: `توجيه الأستاذ مصعب: "${goal}"
-مهمتك من المدير العام مساعد: ${subtask}
+مهمتك من المدير العام: ${subtask}
 ${context ? `\nما تبني عليه (بحث الخلفية ومخرجات الزملاء):\n${context}\n` : ""}
 سلّم مخرجاً عملياً جاهزاً للاستخدام، منظماً بعناوين.`,
     },
@@ -228,10 +228,10 @@ ${digestOf(items, 1600)}
   };
 }
 
-async function finalPlan(goal: string, flow: string, items: Deliverable[], review: Deliverable) {
+async function finalPlan(goal: string, flow: string, items: Deliverable[], review: Deliverable, manager: TeamMember) {
   return chat(
     [
-      { role: "system", content: OFFICE_AGENTS[MANAGER_ID].systemPrompt },
+      { role: "system", content: manager.systemPrompt },
       {
         role: "user",
         content: `توجيه الأستاذ مصعب: "${goal}"${flow ? ` (المسار: ${flow})` : ""}
@@ -253,7 +253,7 @@ ${review.deliverable.slice(0, 2500)}
 }
 
 /** team: الفريق كاملاً كما بُني من الواجهة (اختياري؛ الافتراضي الفريق الأساسي) */
-export async function runTask(goal: string, team?: TeamMember[]): Promise<TaskResult> {
+export async function runTask(goal: string, team?: TeamMember[], manager: TeamMember = managerMember()): Promise<TaskResult> {
   const roster = team?.length ? team : buildRoster();
   const byId = new Map(roster.map((m) => [m.id, m]));
   const flows = detectFlows(goal);
@@ -266,7 +266,7 @@ export async function runTask(goal: string, team?: TeamMember[]): Promise<TaskRe
       return { id, task: flowTask ? `${flowTask}\n${task}` : task };
     });
   const [plan, background] = await Promise.all([
-    makePlan(goal, roster, flows),
+    makePlan(goal, roster, flows, manager),
     Promise.all(bgTasks.map((t) => runAgent(byId.get(t.id)!, goal, t.task, "", "research"))),
   ]);
   const bgDigest = digestOf(background, 1100);
@@ -296,7 +296,7 @@ export async function runTask(goal: string, team?: TeamMember[]): Promise<TaskRe
   const review = deputy
     ? await qualityReview(deputy, goal, all)
     : { agentId: DEPUTY_ID, agentName: "لطيفة", role: "", subtask: "", deliverable: "", stage: "review" as const };
-  const managerSummary = await finalPlan(goal, flow, all, review).catch(() => plan.planSummary);
+  const managerSummary = await finalPlan(goal, flow, all, review, manager).catch(() => plan.planSummary);
   return {
     goal,
     flow,
