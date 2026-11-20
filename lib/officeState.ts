@@ -157,18 +157,21 @@ export function teamInputFromState(s: OfficeState) {
 }
 
 /** نسخة هيكل الجمعية (الإدارات والوحدات الأساسية وتوزيع الوكلاء عليها) */
-export const ORG_VERSION = 1;
+export const ORG_VERSION = 2; // 2: وحدة التطوير والمهارات الذكية
+const UNIT_VERSION: Record<string, number> = { rnd: 2 };
 
 /** يزرع الهيكل التنظيمي الأساسي مرة واحدة دون المساس بما أضافه صاحب العمل */
 export function withCoreOrg(s: OfficeState): OfficeState {
   if ((s.orgVersion ?? 0) >= ORG_VERSION) return s;
-  const departments = [
-    ...CORE_UNITS.filter((u) => !s.departments.some((d) => d.id === u.id)).map((u) => ({ id: u.id, name: u.name, parentId: null })),
-    ...s.departments,
-  ];
+  // نضيف فقط الوحدات الجديدة في كل نسخة (حتى لا نعيد ما حذفه صاحب العمل)
+  const since = s.orgVersion ?? 0;
+  const added = CORE_UNITS.filter((u) => (UNIT_VERSION[u.key] ?? 1) > since && !s.departments.some((d) => d.id === u.id));
+  const departments = [...added.map((u) => ({ id: u.id, name: u.name, parentId: null })), ...s.departments];
   const profiles = { ...s.profiles };
   for (const id of WORKER_IDS) {
-    if (!profiles[id]?.departmentId) profiles[id] = { ...profiles[id], departmentId: CORE_UNIT_OF[id] };
+    const unit = CORE_UNIT_OF[id];
+    const skip = since > 0 && !added.some((u) => u.id === unit);
+    if (!profiles[id]?.departmentId && !skip) profiles[id] = { ...profiles[id], departmentId: unit };
   }
   return { ...s, departments, profiles, orgVersion: ORG_VERSION };
 }
