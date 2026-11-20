@@ -2,6 +2,7 @@ import { after, NextResponse } from "next/server";
 import { runTask } from "@/lib/orchestrator";
 import { isDbConfigured, loadState, updateState } from "@/lib/db";
 import { buildRoster, parseTeamInput } from "@/lib/agents";
+import { teamInputFromState } from "@/lib/officeState";
 import { newId } from "@/lib/officeState";
 import { verifyTeamsHmac } from "@/lib/teamsAuth";
 import { notifyTeamsOnCompletion, notifyTeamsText } from "@/lib/teamsNotifier";
@@ -51,12 +52,7 @@ export async function POST(req: Request) {
       if (isDbConfigured()) {
         const st = await loadState().catch(() => null);
         if (st) {
-          const ids = ["kareem", "mona", "omar", ...st.employees.map((e) => e.id)];
-          const input = ids.map((id) => ({
-            ...(st.employees.find((e) => e.id === id) ?? { id }),
-            development: st.development[id] ?? [],
-            learned: (st.learning?.[id] ?? []).flatMap((l) => l.takeaways).slice(-12),
-          }));
+          const input = teamInputFromState(st);
           team = buildRoster(parseTeamInput(input));
         }
       }

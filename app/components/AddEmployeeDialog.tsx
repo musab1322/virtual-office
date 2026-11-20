@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { Gender } from "@/lib/agents";
-import { addEmployee } from "@/lib/officeStore";
+import { addEmployee, setProfile, useOffice } from "@/lib/officeStore";
+import DepartmentSelect from "./DepartmentSelect";
 import { card, input } from "./ui";
 
 export default function AddEmployeeDialog({ onClose }: { onClose: () => void }) {
@@ -10,6 +11,8 @@ export default function AddEmployeeDialog({ onClose }: { onClose: () => void }) 
   const [role, setRole] = useState("");
   const [specialty, setSpecialty] = useState("");
   const [gender, setGender] = useState<Gender>("m");
+  const [dep, setDep] = useState<string | null>(null);
+  const office = useOffice();
   const valid = name.trim() && role.trim();
 
   return (
@@ -20,7 +23,8 @@ export default function AddEmployeeDialog({ onClose }: { onClose: () => void }) 
         onSubmit={(e) => {
           e.preventDefault();
           if (!valid) return;
-          addEmployee({ name: name.trim(), role: role.trim(), specialty: specialty.trim(), gender });
+          const created = addEmployee({ name: name.trim(), role: role.trim(), specialty: specialty.trim(), gender });
+          if (dep) setProfile(created.id, { departmentId: dep });
           onClose();
         }}
       >
@@ -34,6 +38,7 @@ export default function AddEmployeeDialog({ onClose }: { onClose: () => void }) 
           className={`${input} min-h-20`}
           maxLength={400}
         />
+        {office.departments.length > 0 && <DepartmentSelect departments={office.departments} value={dep} onChange={setDep} />}
         <div className="flex gap-2 text-sm">
           {(
             [

@@ -1,13 +1,16 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { WORKER_IDS, type CustomEmployee } from "@/lib/agents";
+import type { CustomEmployee } from "@/lib/agents";
 import {
   emptyState,
   newId,
   normalizeState,
   trimState,
+  teamInputFromState,
   type ChatMsg,
+  type Department,
+  type ProfileEdit,
   type LearningEntry,
   type MeetingRecord,
   type OfficeState,
@@ -70,7 +73,7 @@ function schedulePush() {
 }
 
 const hasContent = (s: OfficeState) =>
-  s.employees.length + s.tasks.length + s.meetings.length + Object.keys(s.chats).length + Object.keys(s.learning).length > 0;
+  s.employees.length + s.tasks.length + s.meetings.length + Object.keys(s.chats).length + Object.keys(s.learning).length + s.departments.length + Object.keys(s.profiles).length > 0;
 
 async function start() {
   state = readLocal();
@@ -138,14 +141,10 @@ export const EMPLOYEE_COLORS = [
   "#0d9488", "#c2410c", "#4f46e5", "#be185d", "#65a30d", "#0284c7",
 ];
 
-export function addEmployee(e: Omit<CustomEmployee, "id" | "color">) {
-  update((s) => ({
-    ...s,
-    employees: [
-      ...s.employees,
-      { ...e, id: newId("emp"), color: EMPLOYEE_COLORS[s.employees.length % EMPLOYEE_COLORS.length] },
-    ],
-  }));
+export function addEmployee(e: Omit<CustomEmployee, "id" | "color">): CustomEmployee {
+  const created: CustomEmployee = { ...e, id: newId("emp"), color: EMPLOYEE_COLORS[state.employees.length % EMPLOYEE_COLORS.length] };
+  update((s) => ({ ...s, employees: [...s.employees, created] }));
+  return created;
 }
 
 export function removeEmployee(id: string) {
@@ -198,10 +197,39 @@ export function learnedSkills(employeeId: string, s: OfficeState = state) {
   return (s.learning[employeeId] ?? []).flatMap((l) => l.takeaways).slice(-12);
 }
 
-/** بيانات الفريق التي تُرسل للخادم مع كل طلب (الموظفون الجدد + توجيهات التطوير + الخبرات المكتسبة) */
+/** بيانات الفريق التي تُرسل للخادم مع كل طلب */
 export function teamPayload(s: OfficeState = state) {
-  return [
-    ...WORKER_IDS.map((id) => ({ id, development: s.development[id] ?? [], learned: learnedSkills(id, s) })),
-    ...s.employees.map((e) => ({ ...e, development: s.development[e.id] ?? [], learned: learnedSkills(e.id, s) })),
-  ];
+  return teamInputFromState(s);
+}
+
+// ─── تعديل ملفات الموظفين ───────────────────────────────────────────
+export function setProfile(employeeId: string, patch: ProfileEdit | null) {
+  update((s) => {
+    const profiles = { ...s.profiles };
+    if (patch === null) delete profiles[employeeId];
+    else profiles[employeeId] = { ...profiles[employeeId], ...patch };
+    return { ...s, profiles };
+  });
+}
+
+// ─── الإدارات والأقسام ──────────────────────────────────────────────
+export function addDepartment(name: string, parentId: string | null = null) {
+  const d: Department = { id: newId("dep"), name: name.trim().slice(0, 50), parentId };
+  update((s) => ({ ...s, departments: [...s.departments, d] }));
+  return d;
+}
+
+export function renameDepartment(id: string, name: string) {
+  update((s) => ({ ...s, departments: s.departments.map((d) => (d.id === id ? { ...d, name: name.trim().slice(0, 50) } : d)) }));
+}
+
+/** حذف إدارة (مع أقسامها) أو قسم، والموظفون فيها يصبحون بدون إدارة */
+export function removeDepartment(id: string) {
+  update((s) => {
+    const gone = new Set([id, ...s.departments.filter((d) => d.parentId === id).map((d) => d.id)]);
+    const profiles = Object.fromEntries(
+      Object.entries(s.profiles).map(([k, p]) => [k, p.departmentId && gone.has(p.departmentId) ? { ...p, departmentId: null } : p])
+    );
+    return { ...s, departments: s.departments.filter((d) => !gone.has(d.id)), profiles };
+  });
 }

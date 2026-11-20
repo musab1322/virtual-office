@@ -40,7 +40,7 @@ export async function POST(req: Request) {
         [
           {
             role: "system",
-            content: `${member.systemPrompt}\n${speakingStyle(member.id)}\nأنت تتحدث الآن مباشرة مع صاحب العمل (مديرك). ${
+            content: `${member.systemPrompt}\n${speakingStyle(member.id, member.style)}\nأنت تتحدث الآن مباشرة مع صاحب العمل (مديرك). ${
               call
                 ? "هذه مكالمة صوتية سريعة مثل النقاش: رد بجملة أو جملتين قصيرتين فقط (أقل من 35 كلمة)، بلهجة سعودية طبيعية، بدون رموز أو قوائم أو أرقام نقاط. إذا كان الكلام غير واضح اطلب التوضيح بجملة واحدة."
                 : "أجب بإيجاز ووضوح."

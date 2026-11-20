@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { appendChat, getOffice, teamPayload } from "@/lib/officeStore";
 import Avatar from "./Avatar";
+import { OFFICE_AGENTS, type AgentId } from "@/lib/agents";
 import { speechChunks, splitForSpeech, voiceFor } from "@/lib/voice";
 import { postJSON } from "./ui";
 import type { Person } from "./office/Character";
@@ -111,7 +112,7 @@ export default function CallDialog({
       const res = await fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voice: voiceFor({ id: person.id, gender: person.gender }) }),
+        body: JSON.stringify({ text, voice: voiceFor({ id: person.id, gender: person.gender, voice: person.voice }) }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -119,7 +120,7 @@ export default function CallDialog({
       }
       return URL.createObjectURL(await res.blob());
     },
-    [person.id, person.gender]
+    [person.id, person.gender, person.voice]
   );
 
   const playUrl = useCallback(async (url: string) => {
@@ -326,7 +327,7 @@ export default function CallDialog({
           fd.append("audio", new Blob(chunks, { type: rec.mimeType || mime || "audio/webm" }), "speech");
           fd.append(
             "names",
-            [person.name, "مصعب", "سلطان", "نورة", "عبدالعزيز", ...getOffice().employees.map((e) => e.name)].join(",")
+            [person.name, "مصعب", ...teamPayload().map((e) => e.name ?? OFFICE_AGENTS[e.id as AgentId]?.name ?? "")].filter(Boolean).join(",")
           );
           const res = await fetch("/api/stt", { method: "POST", body: fd });
           const data = await res.json().catch(() => ({}));

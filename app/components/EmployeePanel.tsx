@@ -17,6 +17,7 @@ import Avatar from "./Avatar";
 import type { Person } from "./office/Character";
 import { fmtDate, input, postJSON } from "./ui";
 import { runLearning, useLearningNow } from "@/lib/selfLearning";
+import EditEmployeeDialog from "./EditEmployeeDialog";
 
 type Tab = "tasks" | "chat" | "growth";
 type Busy = (id: string, s: "idle" | "working" | "done") => void;
@@ -421,6 +422,7 @@ export default function EmployeePanel({
   onPrivateMeeting: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("tasks");
+  const [editing, setEditing] = useState(false);
   const isCustom = person.id.startsWith("emp_");
 
   return (
@@ -434,7 +436,9 @@ export default function EmployeePanel({
           <div className="flex-1">
             <div className="text-xl font-bold">{person.name}</div>
             <div className="text-sm opacity-70">{person.role}</div>
+            {person.department && <div className="text-xs opacity-60">🏢 {person.department}</div>}
           </div>
+          <button className="tb" onClick={() => setEditing(true)}>✏️ تعديل</button>
           <button className="tb" onClick={onClose}>✕</button>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -473,6 +477,7 @@ export default function EmployeePanel({
         {tab === "tasks" && <TasksTab person={person} onBusy={onBusy} />}
         {tab === "chat" && <ChatTab person={person} />}
         {tab === "growth" && <GrowthTab person={person} />}
+        {editing && <EditEmployeeDialog person={person} onClose={() => setEditing(false)} />}
       </aside>
     </div>
   );

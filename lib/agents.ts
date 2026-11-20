@@ -23,7 +23,7 @@ export const OFFICE_AGENTS: Record<AgentId, OfficeAgent> = {
     role: "المدير العام",
     emoji: "🧑‍💼",
     color: "#2563eb",
-    systemPrompt: `أنت مصعب، المدير العام لمكتب افتراضي من وكلاء الذكاء الاصطناعي. تستلم هدفاً من صاحب العمل، فتقسمه إلى مهام فرعية وتوزعها على فريقك: سلطان (مشتري الإعلانات وجلب الزيارات)، نورة (أخصائية مسارات التحويل وصفحات الهبوط)، عبدالعزيز (المساعد التنفيذي: التنظيم والجداول والمحاضر والمتابعة)، ومن يُضاف لاحقاً من الموظفين. تحدد الأولويات والجدول الزمني ثم تلخص النتائج. ${STYLE}`,
+    systemPrompt: `أنت مصعب، المدير العام لمكتب افتراضي من وكلاء الذكاء الاصطناعي. تستلم هدفاً من صاحب العمل، فتقسمه إلى مهام فرعية وتوزعها على فريقك من الموظفين (تصلك أسماؤهم وأدوارهم وأقسامهم مع كل مهمة). تحدد الأولويات والجدول الزمني ثم تلخص النتائج. ${STYLE}`,
   },
   kareem: {
     id: "kareem",
@@ -56,6 +56,13 @@ export const OFFICE_AGENTS: Record<AgentId, OfficeAgent> = {
 
 export const WORKER_IDS: AgentId[] = ["kareem", "mona", "omar"];
 
+/** تخصص الموظفين الأساسيين (يُستخدم عند تعديل أسمائهم أو مسمياتهم) */
+export const CORE_SPECIALTY: Record<string, string> = {
+  kareem: "اختيار القنوات الإعلانية، الجمهور المستهدف، أفكار الإعلانات والنصوص، توزيع الميزانية، ومؤشرات الأداء",
+  mona: "رحلة العميل، صفحات الهبوط، العروض، رسائل المتابعة، وتحسين معدل التحويل",
+  omar: "تحويل الخطط إلى جداول زمنية ومهام بمسؤولين ومواعيد، كتابة محاضر الاجتماعات الرسمية، وقوائم المتابعة",
+};
+
 // ─── موظفون جدد يضيفهم صاحب العمل من الواجهة ───────────────────────
 export interface CustomEmployee {
   id: string; // يبدأ بـ "emp_"
@@ -72,6 +79,8 @@ export interface TeamMember {
   name: string;
   role: string;
   systemPrompt: string;
+  style?: string; // أسلوب كلام حدده صاحب العمل
+  department?: string;
 }
 
 export function customSystemPrompt(e: Pick<CustomEmployee, "name" | "role" | "specialty">) {
@@ -87,6 +96,8 @@ export interface TeamInput {
   specialty?: string;
   development?: string[];
   learned?: string[];
+  style?: string;
+  department?: string;
 }
 
 /** توجيهات المدير لتطوير الموظف تُضاف إلى تعليماته */
@@ -114,16 +125,34 @@ export function parseTeamInput(raw: unknown): Map<string, TeamMember> {
     const learned = Array.isArray(r.learned)
       ? r.learned.map((d) => clean(d, 300)).filter(Boolean).slice(-12)
       : [];
+    const style = clean(r.style, 400);
+    const department = clean(r.department, 120);
+    const where = (p: string) => (department ? `${p}\nتعمل في ${department}.` : p);
     if (id in OFFICE_AGENTS) {
       const a = OFFICE_AGENTS[id as AgentId];
-      out.set(id, { id, name: a.name, role: a.role, systemPrompt: withDevelopment(a.systemPrompt, dev, learned) });
+      const name = clean(r.name, 40) || a.name;
+      const role = clean(r.role, 60) || a.role;
+      const specialty = clean(r.specialty, 400);
+      // إذا عدّل صاحب العمل الاسم أو المسمى أو التخصص نبني التعليمات من جديد
+      const base =
+        name !== a.name || role !== a.role || specialty
+          ? customSystemPrompt({ name, role, specialty: specialty || CORE_SPECIALTY[id] || role })
+          : a.systemPrompt;
+      out.set(id, { id, name, role, style: style || undefined, department: department || undefined, systemPrompt: withDevelopment(where(base), dev, learned) });
       continue;
     }
     const name = clean(r.name, 40);
     const role = clean(r.role, 60);
     const specialty = clean(r.specialty, 400);
     if (!/^emp_[a-z0-9]+$/i.test(id) || !name || !role || out.has(id)) continue;
-    out.set(id, { id, name, role, systemPrompt: withDevelopment(customSystemPrompt({ name, role, specialty }), dev, learned) });
+    out.set(id, {
+      id,
+      name,
+      role,
+      style: style || undefined,
+      department: department || undefined,
+      systemPrompt: withDevelopment(where(customSystemPrompt({ name, role, specialty })), dev, learned),
+    });
   }
   return out;
 }
@@ -166,7 +195,8 @@ const EXTRA_STYLES = [
   "أسلوبك ثابت دائماً: نشيط ومبادر، تقترح حلولاً سريعة وتسأل سؤالاً واحداً للتوضيح عند الحاجة.",
 ];
 
-export function speakingStyle(id: string) {
+export function speakingStyle(id: string, custom?: string) {
+  if (custom?.trim()) return `أسلوبك ثابت دائماً: ${custom.trim()}`;
   if (CORE_STYLES[id]) return CORE_STYLES[id];
   let h = 0;
   for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;

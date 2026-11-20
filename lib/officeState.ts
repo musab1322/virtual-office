@@ -1,4 +1,4 @@
-import type { CustomEmployee } from "@/lib/agents";
+import { WORKER_IDS, type CustomEmployee } from "@/lib/agents";
 
 // حالة المكتب الكاملة: تُحفظ في المتصفح، وفي قاعدة البيانات عند توفرها
 export type TaskStatus = "pending" | "in_progress" | "done";
@@ -43,6 +43,23 @@ export interface LearningEntry {
   at: string;
 }
 
+/** إدارة (parentId = null) أو قسم تابع لإدارة */
+export interface Department {
+  id: string;
+  name: string;
+  parentId: string | null;
+}
+
+/** تعديلات صاحب العمل على ملف أي موظف (أساسي أو جديد) */
+export interface ProfileEdit {
+  name?: string;
+  role?: string;
+  specialty?: string;
+  style?: string; // أسلوب الكلام والتعامل
+  departmentId?: string | null;
+  voice?: string; // صوت المكالمات (اختياري، وإلا يبقى الصوت الثابت الحالي)
+}
+
 export interface OfficeState {
   version: 2;
   updatedAt: string;
@@ -52,6 +69,8 @@ export interface OfficeState {
   chats: Record<string, ChatMsg[]>;
   development: Record<string, string[]>; // توجيهات تطوير لكل موظف
   learning: Record<string, LearningEntry[]>; // سجل التطوير الذاتي لكل موظف
+  departments: Department[];
+  profiles: Record<string, ProfileEdit>;
 }
 
 export const emptyState = (): OfficeState => ({
@@ -63,6 +82,8 @@ export const emptyState = (): OfficeState => ({
   chats: {},
   development: {},
   learning: {},
+  departments: [],
+  profiles: {},
 });
 
 export const newId = (p: string) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -81,6 +102,7 @@ export function trimState(s: OfficeState): OfficeState {
     ),
     development: Object.fromEntries(Object.entries(s.development).map(([k, v]) => [k, v.slice(0, 15)])),
     learning: Object.fromEntries(Object.entries(s.learning).map(([k, v]) => [k, v.slice(-30)])),
+    departments: s.departments.slice(0, 60),
   };
 }
 
@@ -98,5 +120,32 @@ export function normalizeState(raw: unknown): OfficeState {
     chats: r.chats && typeof r.chats === "object" ? r.chats : {},
     development: r.development && typeof r.development === "object" ? r.development : {},
     learning: r.learning && typeof r.learning === "object" ? r.learning : {},
+    departments: Array.isArray(r.departments) ? r.departments : [],
+    profiles: r.profiles && typeof r.profiles === "object" ? r.profiles : {},
   };
+}
+
+/** وصف مكان الموظف في الهيكل التنظيمي، مثل: "قسم التصميم في إدارة التسويق" */
+export function departmentLabel(s: OfficeState, employeeId: string) {
+  const d = s.departments.find((x) => x.id === s.profiles[employeeId]?.departmentId);
+  if (!d) return "";
+  const parent = d.parentId ? s.departments.find((x) => x.id === d.parentId) : null;
+  return parent ? `قسم ${d.name} في إدارة ${parent.name}` : `إدارة ${d.name}`;
+}
+
+/** بيانات الفريق التي تُرسل للخادم (الملفات المعدّلة + التوجيهات + الخبرات + القسم) */
+export function teamInputFromState(s: OfficeState) {
+  const extra = (id: string) => {
+    const p = s.profiles[id] ?? {};
+    return {
+      ...(p.name ? { name: p.name } : {}),
+      ...(p.role ? { role: p.role } : {}),
+      ...(p.specialty ? { specialty: p.specialty } : {}),
+      ...(p.style ? { style: p.style } : {}),
+      department: departmentLabel(s, id),
+      development: s.development[id] ?? [],
+      learned: (s.learning?.[id] ?? []).flatMap((l) => l.takeaways).slice(-12),
+    };
+  };
+  return [...WORKER_IDS.map((id) => ({ id, ...extra(id) })), ...s.employees.map((e) => ({ ...e, ...extra(e.id) }))];
 }

@@ -22,7 +22,7 @@ interface Plan {
 }
 
 async function makePlan(goal: string, roster: TeamMember[]): Promise<Plan> {
-  const team = roster.map((m) => `- ${m.id}: ${m.name} (${m.role})`).join("\n");
+  const team = roster.map((m) => `- ${m.id}: ${m.name} (${m.role}${m.department ? ` — ${m.department}` : ""})`).join("\n");
   const ids = roster.map((m) => `"${m.id}"`).join(" | ");
   const raw = await chat(
     [
