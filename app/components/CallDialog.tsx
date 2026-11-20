@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { appendChat, getOffice, teamPayload } from "@/lib/officeStore";
 import Avatar from "./Avatar";
+import { splitForSpeech, voiceFor } from "@/lib/voice";
 import { postJSON } from "./ui";
 import type { Person } from "./office/Character";
 
@@ -50,6 +51,38 @@ function pickVoice(gender: "m" | "f") {
 
 type Phase = "idle" | "listening" | "thinking" | "speaking";
 
+/** حركة الوجه: فتح الفم أثناء الكلام، ورمش طبيعي، وحركة رأس خفيفة */
+function useTalkingFace(speaking: boolean) {
+  const [face, setFace] = useState({ mouth: 0, blink: false, bob: 0, tilt: 0 });
+  useEffect(() => {
+    let raf = 0;
+    let last = 0;
+    let nextBlink = performance.now() + 2500;
+    let blinkUntil = 0;
+    const loop = (now: number) => {
+      raf = requestAnimationFrame(loop);
+      if (now - last < 50) return; // ~20 إطار في الثانية يكفي
+      last = now;
+      const t = now / 1000;
+      if (now > nextBlink) {
+        blinkUntil = now + 140;
+        nextBlink = now + 2200 + Math.random() * 2800;
+      }
+      const pause = Math.sin(t * 2.3) > 0.82; // وقفات قصيرة بين الكلمات
+      const mouth = speaking && !pause ? Math.abs(Math.sin(t * 11)) * (0.55 + 0.45 * Math.sin(t * 3.7 + 1)) : 0;
+      setFace({
+        mouth,
+        blink: now < blinkUntil,
+        bob: Math.sin(t * (speaking ? 2.4 : 1.1)) * (speaking ? 3 : 1.5),
+        tilt: Math.sin(t * 0.9) * (speaking ? 2.5 : 1),
+      });
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [speaking]);
+  return face;
+}
+
 export default function CallDialog({
   person,
   withVideo,
@@ -96,22 +129,102 @@ export default function CallDialog({
     return () => stream?.getTracks().forEach((t) => t.stop());
   }, [camOn]);
 
-  const speak = useCallback(
-    (text: string) =>
-      new Promise<void>((resolve) => {
-        const synth = window.speechSynthesis;
-        if (!synth) return resolve();
-        synth.cancel();
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = "ar-SA";
-        const v = pickVoice(person.gender);
-        if (v) u.voice = v;
-        u.rate = 1;
-        u.onend = () => resolve();
-        u.onerror = () => resolve();
-        synth.speak(u);
-      }),
+  // ─── النطق: صوت سعودي من الخادم أولاً، ثم أصوات المتصفح كبديل ───
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const serverTts = useRef(true);
+  const tapResolve = useRef<(() => void) | null>(null);
+  const [needTap, setNeedTap] = useState(false);
+  const [voiceNote, setVoiceNote] = useState<string | null>(null);
+
+  const fetchClip = useCallback(
+    async (text: string) => {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice: voiceFor(person) }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `TTS ${res.status}`);
+      }
+      return URL.createObjectURL(await res.blob());
+    },
+    [person]
+  );
+
+  const playUrl = useCallback(async (url: string) => {
+    const a = (audio.current ??= new Audio());
+    a.src = url;
+    try {
+      await a.play();
+    } catch (e) {
+      if ((e as DOMException).name !== "NotAllowedError") throw e;
+      // المتصفح منع التشغيل التلقائي: نطلب ضغطة من المستخدم
+      setNeedTap(true);
+      await new Promise<void>((r) => (tapResolve.current = r));
+      setNeedTap(false);
+      await a.play();
+    }
+    await new Promise<void>((resolve) => {
+      a.onended = () => resolve();
+      a.onerror = () => resolve();
+      a.onpause = () => resolve();
+    });
+  }, []);
+
+  const browserSpeak = useCallback(
+    async (text: string) => {
+      const synth = window.speechSynthesis;
+      if (!synth) {
+        setVoiceNote("متصفحك لا يدعم النطق الصوتي.");
+        return;
+      }
+      if (!synth.getVoices().length) {
+        await new Promise<void>((r) => {
+          synth.onvoiceschanged = () => r();
+          setTimeout(r, 1200);
+        });
+      }
+      const v = pickVoice(person.gender);
+      if (!v) setVoiceNote("لا يوجد صوت عربي مثبت في جهازك، لذلك قد لا تسمع الرد. أضف اللغة العربية لنظام التشغيل أو استخدم Edge.");
+      for (const chunk of splitForSpeech(text)) {
+        if (!active.current) return;
+        await new Promise<void>((resolve) => {
+          synth.cancel();
+          const u = new SpeechSynthesisUtterance(chunk);
+          u.lang = "ar-SA";
+          if (v) u.voice = v;
+          u.onend = () => resolve();
+          u.onerror = () => resolve();
+          synth.speak(u);
+        });
+      }
+    },
     [person.gender]
+  );
+
+  const speak = useCallback(
+    async (text: string) => {
+      if (serverTts.current) {
+        const chunks = splitForSpeech(text);
+        try {
+          let next = chunks.length ? fetchClip(chunks[0]) : null;
+          for (let i = 0; i < chunks.length && next; i++) {
+            const url = await next;
+            next = i + 1 < chunks.length ? fetchClip(chunks[i + 1]) : null;
+            if (!active.current) return;
+            await playUrl(url);
+            URL.revokeObjectURL(url);
+          }
+          return;
+        } catch (e) {
+          serverTts.current = false;
+          setVoiceNote(`الصوت السعودي غير متاح الآن، نستخدم صوت المتصفح. (${(e as Error).message})`);
+        }
+      }
+      await browserSpeak(text);
+    },
+    [fetchClip, playUrl, browserSpeak]
   );
 
   const listenRef = useRef<() => void>(() => {});
@@ -204,6 +317,8 @@ export default function CallDialog({
       clearTimeout(t);
       rec.current?.abort();
       window.speechSynthesis?.cancel();
+      audio.current?.pause();
+      tapResolve.current?.();
     };
   }, [person.name, speak]);
 
@@ -217,6 +332,8 @@ export default function CallDialog({
     } else if (phase === "idle") listen();
   }
 
+  const face = useTalkingFace(phase === "speaking");
+  const faceStyle = { transform: `translateY(${face.bob}px) rotate(${face.tilt}deg)`, transition: "transform 80ms linear" };
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
   const phaseText: Record<Phase, string> = {
@@ -233,24 +350,62 @@ export default function CallDialog({
           <span>📞 مكالمة {withVideo ? "فيديو" : "صوتية"} مع {person.name}</span>
           <span dir="ltr">{mm}:{ss}</span>
         </div>
-        <div className="relative grid min-h-[300px] place-items-center bg-gradient-to-b from-zinc-800 to-zinc-900 px-6 pb-6">
-          <div className="flex flex-col items-center gap-3 text-center">
-            <Avatar person={person} size={150} speaking={phase === "speaking"} />
-            <div className="text-xl font-bold">{person.name}</div>
-            <div className="text-sm opacity-70">{person.role}</div>
-            <div className="text-sm text-emerald-300">{phaseText[phase]}</div>
+        {withVideo ? (
+          // مكالمة فيديو: صورة الموظف الحية تملأ الشاشة، ومعاينتك في الزاوية
+          <div
+            className="relative aspect-video w-full overflow-hidden"
+            style={{ background: `radial-gradient(circle at 50% 35%, ${person.color}55, #1f2937 55%, #0b0f17)` }}
+          >
+            <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent" />
+            <div className="absolute inset-0 grid place-items-center pt-6">
+              <div style={faceStyle}>
+                <Avatar person={person} size={230} mouth={face.mouth} blink={face.blink} ring={false} speaking={phase === "speaking"} />
+              </div>
+            </div>
+            <span className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-red-600/90 px-2 py-0.5 text-xs font-semibold">
+              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-white" /> مباشر
+            </span>
+            <div className="absolute bottom-3 right-3 text-start">
+              <div className="text-lg font-bold">{person.name}</div>
+              <div className="text-xs opacity-75">{person.role} • <span className="text-emerald-300">{phaseText[phase]}</span></div>
+            </div>
+            {camOn ? (
+              <video
+                ref={video}
+                autoPlay
+                muted
+                playsInline
+                className="absolute bottom-3 left-3 h-24 w-36 rounded-xl border border-white/25 object-cover shadow-lg sm:h-28 sm:w-44"
+                style={{ transform: "scaleX(-1)" }}
+              />
+            ) : (
+              <div className="absolute bottom-3 left-3 grid h-24 w-36 place-items-center rounded-xl border border-white/25 bg-black/50 text-xs sm:h-28 sm:w-44">
+                كاميرتك مغلقة
+              </div>
+            )}
           </div>
-          {camOn && (
-            <video
-              ref={video}
-              autoPlay
-              muted
-              playsInline
-              className="absolute bottom-4 left-4 h-28 w-40 rounded-xl border border-white/20 object-cover"
-              style={{ transform: "scaleX(-1)" }}
-            />
-          )}
-        </div>
+        ) : (
+          <div className="relative grid min-h-[300px] place-items-center bg-gradient-to-b from-zinc-800 to-zinc-900 px-6 pb-6">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div style={faceStyle}>
+                <Avatar person={person} size={150} mouth={face.mouth} blink={face.blink} speaking={phase === "speaking"} />
+              </div>
+              <div className="text-xl font-bold">{person.name}</div>
+              <div className="text-sm opacity-70">{person.role}</div>
+              <div className="text-sm text-emerald-300">{phaseText[phase]}</div>
+            </div>
+            {camOn && (
+              <video
+                ref={video}
+                autoPlay
+                muted
+                playsInline
+                className="absolute bottom-4 left-4 h-28 w-40 rounded-xl border border-white/20 object-cover"
+                style={{ transform: "scaleX(-1)" }}
+              />
+            )}
+          </div>
+        )}
         <div className="space-y-2 px-5 py-3 text-sm">
           {heard && (
             <p className="opacity-70">
@@ -267,6 +422,15 @@ export default function CallDialog({
               متصفحك لا يدعم التحدث الصوتي. استخدم Chrome أو Edge، أو اكتب رسالتك هنا وسيرد عليك بصوته.
             </p>
           )}
+          {needTap && (
+            <button
+              className="w-full rounded-lg bg-emerald-600 px-4 py-2 font-semibold"
+              onClick={() => tapResolve.current?.()}
+            >
+              🔊 اضغط هنا لتشغيل الصوت
+            </button>
+          )}
+          {voiceNote && <p className="text-xs text-amber-300">{voiceNote}</p>}
           {error && <p className="text-red-300">{error}</p>}
           {(!Recognizer || muted) && (
             <form

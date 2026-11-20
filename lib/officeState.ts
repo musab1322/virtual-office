@@ -34,6 +34,15 @@ export interface MeetingRecord {
   at: string;
 }
 
+/** جلسة تطوير ذاتي يتعلم فيها الموظف شيئاً جديداً في مجاله */
+export interface LearningEntry {
+  id: string;
+  topic: string;
+  summary: string;
+  takeaways: string[]; // قواعد عملية تُضاف لخبرته وتنعكس على عمله
+  at: string;
+}
+
 export interface OfficeState {
   version: 2;
   updatedAt: string;
@@ -42,6 +51,7 @@ export interface OfficeState {
   meetings: MeetingRecord[];
   chats: Record<string, ChatMsg[]>;
   development: Record<string, string[]>; // توجيهات تطوير لكل موظف
+  learning: Record<string, LearningEntry[]>; // سجل التطوير الذاتي لكل موظف
 }
 
 export const emptyState = (): OfficeState => ({
@@ -52,6 +62,7 @@ export const emptyState = (): OfficeState => ({
   meetings: [],
   chats: {},
   development: {},
+  learning: {},
 });
 
 export const newId = (p: string) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -69,6 +80,7 @@ export function trimState(s: OfficeState): OfficeState {
       Object.entries(s.chats).map(([k, v]) => [k, v.slice(-60).map((m) => ({ ...m, content: cut(m.content, 3000) ?? "" }))])
     ),
     development: Object.fromEntries(Object.entries(s.development).map(([k, v]) => [k, v.slice(0, 15)])),
+    learning: Object.fromEntries(Object.entries(s.learning).map(([k, v]) => [k, v.slice(-30)])),
   };
 }
 
@@ -85,5 +97,6 @@ export function normalizeState(raw: unknown): OfficeState {
     meetings: Array.isArray(r.meetings) ? r.meetings : [],
     chats: r.chats && typeof r.chats === "object" ? r.chats : {},
     development: r.development && typeof r.development === "object" ? r.development : {},
+    learning: r.learning && typeof r.learning === "object" ? r.learning : {},
   };
 }

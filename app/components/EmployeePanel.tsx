@@ -16,6 +16,7 @@ import type { OfficeTask } from "@/lib/officeState";
 import Avatar from "./Avatar";
 import type { Person } from "./office/Character";
 import { fmtDate, input, postJSON } from "./ui";
+import { runLearning, useLearningNow } from "@/lib/selfLearning";
 
 type Tab = "tasks" | "chat" | "growth";
 type Busy = (id: string, s: "idle" | "working" | "done") => void;
@@ -26,11 +27,11 @@ const SOURCE: Record<OfficeTask["source"], string> = {
   teams: "من Teams",
 };
 
-export function performance(tasks: OfficeTask[]) {
+export function performance(tasks: OfficeTask[], learned = 0) {
   const done = tasks.filter((t) => t.status === "done");
   const rated = done.filter((t) => typeof t.rating === "number");
   const avg = rated.length ? rated.reduce((a, t) => a + (t.rating ?? 0), 0) / rated.length : null;
-  const score = done.length + (avg ? (avg - 3) * 3 : 0);
+  const score = done.length + (avg ? (avg - 3) * 3 : 0) + learned * 0.5;
   const level = score >= 15 ? "خبير" : score >= 6 ? "متمكّن" : "مبتدئ";
   return { done: done.length, pending: tasks.length - done.length, avg, level };
 }
@@ -255,7 +256,10 @@ function GrowthTab({ person }: { person: Person }) {
   const office = useOffice();
   const notes = office.development[person.id] ?? [];
   const tasks = office.tasks.filter((t) => t.employeeId === person.id);
-  const perf = performance(tasks);
+  const learning = office.learning[person.id] ?? [];
+  const perf = performance(tasks, learning.length);
+  const learningNow = useLearningNow();
+  const [learnErr, setLearnErr] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [review, setReview] = useState<Review | null>(null);
   const [busy, setBusy] = useState(false);
@@ -300,6 +304,41 @@ function GrowthTab({ person }: { person: Person }) {
           </div>
         ))}
       </div>
+
+      <section className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-bold">📚 التطوير الذاتي ({learning.length})</h3>
+          <button
+            className="tb tb-green"
+            disabled={!!learningNow}
+            onClick={() => {
+              setLearnErr(null);
+              runLearning(person.id).catch((e) => setLearnErr((e as Error).message));
+            }}
+          >
+            {learningNow === person.id ? `${person.name} يتعلم الآن…` : "📖 تعلّم مهارة جديدة الآن"}
+          </button>
+        </div>
+        <p className="text-xs opacity-60">
+          يتعلم {person.name} تلقائياً مهارة جديدة في مجاله كل يوم، وتُضاف خلاصتها لخبرته فيطبقها في مهامه ومحادثاته.
+        </p>
+        {learnErr && <p className="text-xs text-red-600">{learnErr}</p>}
+        {learning.length === 0 && <p className="opacity-60">لم يبدأ التعلم بعد، ستبدأ أول جلسة تلقائياً خلال دقائق.</p>}
+        <ul className="space-y-2">
+          {[...learning].reverse().slice(0, 10).map((l) => (
+            <li key={l.id} className="rounded-lg border border-emerald-300/60 dark:border-emerald-800 px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <b>{l.topic}</b>
+                <span className="text-xs opacity-50">{fmtDate(l.at)}</span>
+              </div>
+              {l.summary && <p className="mt-1 opacity-80">{l.summary}</p>}
+              <ul className="mt-1 list-disc ps-5 text-xs">
+                {l.takeaways.map((t, i) => <li key={i}>{t}</li>)}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </section>
 
       <section className="space-y-2">
         <h3 className="font-bold">📈 توجيهات التطوير</h3>
