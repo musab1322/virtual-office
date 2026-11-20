@@ -81,6 +81,8 @@ export default function OfficePage() {
       return {
         ...p,
         name: edit?.name || p.name,
+        gender: edit?.gender || p.gender,
+        photo: edit?.photo,
         role: edit?.role || p.role,
         voice: edit?.voice,
         department: departmentLabel(office, p.id) || undefined,

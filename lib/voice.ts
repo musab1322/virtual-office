@@ -33,7 +33,8 @@ export const VOICE_OPTIONS: Record<"m" | "f", { id: string; label: string }[]> =
 /** الصوت الثابت للموظف (أو الصوت الذي اختاره صاحب العمل له) */
 export function voiceFor(p: { id: string; gender: "m" | "f"; voice?: string }) {
   if (p.voice && VOICE_OPTIONS[p.gender].some((v) => v.id === p.voice)) return p.voice;
-  if (CORE_VOICES[p.id]) return CORE_VOICES[p.id];
+  const core = CORE_VOICES[p.id];
+  if (core && VOICE_OPTIONS[p.gender].some((v) => v.id === core)) return core;
   let h = 0;
   for (const ch of p.id) h = (h * 31 + ch.charCodeAt(0)) | 0;
   const list = p.gender === "f" ? FEMALE : MALE;

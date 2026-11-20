@@ -9,7 +9,7 @@ export default function Avatar({
   blink = false,
   ring = true,
 }: {
-  person: { id: string; gender: "m" | "f"; color: string; manager?: boolean };
+  person: { id: string; gender: "m" | "f"; color: string; manager?: boolean; photo?: string };
   size?: number;
   speaking?: boolean;
   /** فتحة الفم من 0 إلى 1 (لتحريك الشفاه أثناء الكلام) */
@@ -33,6 +33,20 @@ export default function Avatar({
       className={`relative inline-grid place-items-center rounded-full ${speaking ? "avatar-speaking" : ""}`}
       style={{ width: size, height: size, background: color + "22", boxShadow: ring ? `0 0 0 3px ${color}` : undefined }}
     >
+      {person.photo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={person.photo}
+          alt=""
+          className="rounded-full object-cover"
+          style={{
+            width: size * 0.92,
+            height: size * 0.92,
+            transform: open > 0.05 ? `scale(${1 + open * 0.025})` : undefined,
+            filter: blink ? "brightness(0.97)" : undefined,
+          }}
+        />
+      ) : (
       <svg viewBox="0 0 100 100" width={size * 0.86} height={size * 0.86} aria-hidden>
         <defs>
           <pattern id={pid} width="10" height="10" patternUnits="userSpaceOnUse">
@@ -74,6 +88,7 @@ export default function Avatar({
           </>
         )}
       </svg>
+      )}
     </div>
   );
 }

@@ -18,6 +18,23 @@ export interface Person {
   manager?: boolean;
   voice?: string; // صوت المكالمات إن اختاره صاحب العمل
   department?: string; // مكانه في الهيكل التنظيمي
+  photo?: string; // صورة مرفوعة تُجسَّد على وجه الشخصية
+}
+
+/** وجه من الصورة المرفوعة: قرص دائري على مقدمة الرأس */
+function PhotoFace({ src }: { src: string }) {
+  const tex = useMemo(() => {
+    const t = new THREE.TextureLoader().load(src);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }, [src]);
+  useEffect(() => () => tex.dispose(), [tex]);
+  return (
+    <mesh position={[0, 0.095, 0.172]}>
+      <circleGeometry args={[0.125, 32]} />
+      <meshBasicMaterial map={tex} toneMapped={false} />
+    </mesh>
+  );
 }
 
 const THOBE = "#f7f7f4";
@@ -304,15 +321,16 @@ export function Character({
             <sphereGeometry args={[0.14, 20, 16]} />
             <meshStandardMaterial color={skin} />
           </mesh>
+          {person.photo && <PhotoFace src={person.photo} />}
           {/* عينان */}
-          {[-0.05, 0.05].map((x) => (
+          {!person.photo && [-0.05, 0.05].map((x) => (
             <mesh key={x} position={[x, 0.12, 0.13]}>
               <sphereGeometry args={[0.016, 8, 6]} />
               <meshStandardMaterial color="#111" />
             </mesh>
           ))}
           {/* لحية وشارب */}
-          {hasBeard && (
+          {hasBeard && !person.photo && (
             <group>
               <mesh position={[0, 0.02, 0.105]} rotation={[0.35, 0, 0]}>
                 <boxGeometry args={[0.17, 0.09, 0.07]} />
