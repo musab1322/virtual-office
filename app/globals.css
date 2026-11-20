@@ -28,3 +28,68 @@ body {
   50% { transform: translateY(-6px); }
 }
 .working { animation: bob 0.9s ease-in-out infinite; }
+
+/* ─── شريط الأدوات ─── */
+.office-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid rgb(0 0 0 / 0.08);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.05);
+}
+@media (prefers-color-scheme: dark) {
+  .office-toolbar { background: #18181b; border-color: rgb(255 255 255 / 0.1); }
+}
+.tb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #f1efe9;
+  color: #3a3226;
+  border: 1px solid #e3dccd;
+  transition: background 0.15s, transform 0.1s;
+  cursor: pointer;
+}
+.tb:hover:not(:disabled) { background: #f7e7c3; }
+.tb:active:not(:disabled) { transform: translateY(1px); }
+.tb:disabled { opacity: 0.45; cursor: default; }
+.tb-active { background: #f5c451; border-color: #e0a92a; color: #2b2214; }
+.tb-primary { background: #2563eb; border-color: #1d4ed8; color: #fff; }
+.tb-primary:hover:not(:disabled) { background: #1d4ed8; }
+.tb-violet { background: #6d28d9; border-color: #5b21b6; color: #fff; }
+.tb-violet:hover:not(:disabled) { background: #5b21b6; }
+.tb-sep { width: 1px; height: 22px; background: rgb(0 0 0 / 0.12); margin: 0 4px; }
+.tb-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c, #999); display: inline-block; }
+
+/* ─── لافتة اسم الموظف في المشهد ─── */
+.agent-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgb(24 24 27 / 0.82);
+  color: #fff;
+  font-size: 15px;
+  border-bottom: 3px solid var(--c);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.25);
+  cursor: pointer;
+  user-select: none;
+  font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif;
+}
+.agent-tag.selected { background: var(--c); }
+.agent-tag .role { opacity: 0.7; font-size: 12px; }
+.agent-tag .dot { width: 8px; height: 8px; border-radius: 50%; background: #9ca3af; }
+.agent-tag .dot.working { background: #f59e0b; animation: pulse 0.8s ease-in-out infinite; }
+.agent-tag .dot.done { background: #22c55e; }
+@keyframes pulse { 50% { opacity: 0.3; } }
+.agent-tag-wrap { position: absolute; top: 0; left: 0; transform-origin: 50% 100%; pointer-events: auto; will-change: transform; }

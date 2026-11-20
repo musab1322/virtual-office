@@ -1,24 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { OFFICE_AGENTS, type AgentId } from "@/lib/agents";
 import type { TaskResult } from "@/lib/orchestrator";
+import type { CameraView } from "./components/Office3D";
 
 type Status = "idle" | "working" | "done";
 
-// مواقع المكاتب ومقاعد غرفة الاجتماعات (بالنسبة المئوية داخل أرضية المكتب)
-const DESKS: Record<AgentId, { x: number; y: number }> = {
-  musab: { x: 12, y: 22 },
-  kareem: { x: 12, y: 72 },
-  mona: { x: 40, y: 72 },
-  omar: { x: 40, y: 22 },
-};
-const MEETING_SEATS: Record<AgentId, { x: number; y: number }> = {
-  musab: { x: 70, y: 32 },
-  kareem: { x: 88, y: 32 },
-  mona: { x: 70, y: 66 },
-  omar: { x: 88, y: 66 },
-};
+// المشهد ثلاثي الأبعاد يعمل في المتصفح فقط
+const Office3D = dynamic(() => import("./components/Office3D"), {
+  ssr: false,
+  loading: () => <div className="grid h-full place-items-center text-sm opacity-60">جاري تحميل المكتب…</div>,
+});
 
 interface MeetingResult {
   topic: string;
@@ -39,6 +33,16 @@ export default function OfficePage() {
   const [result, setResult] = useState<(TaskResult & { teamsNotified: boolean }) | null>(null);
   const [meeting, setMeeting] = useState<MeetingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<CameraView>("overview");
+  const [viewNonce, setViewNonce] = useState(0);
+  const [selected, setSelected] = useState<AgentId | null>(null);
+  const taskRef = useRef<HTMLTextAreaElement>(null);
+
+  const goTo = (v: CameraView) => {
+    setView(v);
+    setViewNonce((n) => n + 1);
+    setSelected(v === "overview" || v === "meeting" ? null : v);
+  };
 
   const setAll = (s: Status) => setStatuses({ musab: s, kareem: s, mona: s, omar: s });
 
@@ -73,7 +77,8 @@ export default function OfficePage() {
     setBusy("meeting");
     setError(null);
     setMeeting(null);
-    setInMeeting(true); // الشخصيات تتحرك إلى غرفة الاجتماعات
+    setInMeeting(true); // الشخصيات تمشي إلى غرفة الاجتماعات
+    goTo("meeting");
     setAll("working");
     try {
       const res = await fetch("/api/team-meeting", {
@@ -94,47 +99,78 @@ export default function OfficePage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl p-4 md:p-8 space-y-6">
-      <header>
-        <h1 className="text-2xl md:text-3xl font-bold">🏢 المكتب الافتراضي</h1>
-        <p className="text-sm opacity-70">مصعب يوزّع المهام على الفريق ويرسل التقرير إلى Microsoft Teams</p>
+    <main className="mx-auto w-full max-w-7xl p-4 md:p-6 space-y-4">
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold">🏢 المكتب الافتراضي</h1>
+          <p className="text-sm opacity-70">مصعب يوزّع المهام على الفريق ويرسل التقرير إلى Microsoft Teams</p>
+        </div>
       </header>
 
-      {/* أرضية المكتب */}
-      <section className="relative h-80 rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 overflow-hidden">
-        <div className="absolute left-[60%] top-[8%] h-[84%] w-[38%] rounded-xl border-2 border-dashed border-sky-400/60 bg-sky-400/5">
-          <span className="absolute top-2 right-3 text-xs text-sky-600 dark:text-sky-300">غرفة الاجتماعات</span>
-          <div className="absolute inset-x-[25%] inset-y-[38%] rounded-full bg-sky-200/50 dark:bg-sky-800/40" />
-        </div>
-        {(Object.keys(OFFICE_AGENTS) as AgentId[]).map((id) => {
-          const a = OFFICE_AGENTS[id];
-          const pos = inMeeting ? MEETING_SEATS[id] : DESKS[id];
-          return (
-            <div
-              key={id}
-              className="absolute -translate-x-1/2 -translate-y-1/2 transition-all duration-1000 ease-in-out text-center"
-              style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
-            >
-              <div
-                className={`mx-auto grid h-14 w-14 place-items-center rounded-full text-2xl shadow-md ${statuses[id] === "working" ? "working" : ""}`}
-                style={{ background: a.color + "22", border: `2px solid ${a.color}` }}
-              >
-                {a.emoji}
-              </div>
-              <div className="mt-1 text-sm font-semibold">{a.name}</div>
-              <div className="text-[11px] opacity-60">{a.role}</div>
-              <div className="text-[11px]">
-                {statuses[id] === "working" ? "⏳ يعمل" : statuses[id] === "done" ? "✅ أنجز" : ""}
-              </div>
+      {/* شريط الأدوات */}
+      <nav className="office-toolbar">
+        <button className="tb tb-primary" onClick={() => taskRef.current?.focus()}>📋 مهمة جديدة</button>
+        <button className="tb tb-violet" onClick={callTeamMeeting} disabled={!!busy}>
+          🎥 {busy === "meeting" ? "جاري الاجتماع…" : "اجتماع الفريق"}
+        </button>
+        <button
+          className="tb"
+          onClick={() => {
+            setInMeeting(false);
+            goTo("overview");
+          }}
+          disabled={!inMeeting}
+        >
+          🪑 العودة للمكاتب
+        </button>
+        <span className="tb-sep" />
+        <button className={`tb ${view === "overview" ? "tb-active" : ""}`} onClick={() => goTo("overview")}>🏢 منظر عام</button>
+        <button className={`tb ${view === "meeting" ? "tb-active" : ""}`} onClick={() => goTo("meeting")}>🤝 غرفة الاجتماعات</button>
+        <span className="tb-sep" />
+        {(Object.keys(OFFICE_AGENTS) as AgentId[]).map((id) => (
+          <button
+            key={id}
+            className={`tb ${view === id ? "tb-active" : ""}`}
+            style={{ ["--c" as string]: OFFICE_AGENTS[id].color }}
+            onClick={() => goTo(id)}
+          >
+            <span className="tb-dot" /> {OFFICE_AGENTS[id].name}
+            {statuses[id] === "working" ? " ⏳" : statuses[id] === "done" ? " ✅" : ""}
+          </button>
+        ))}
+      </nav>
+
+      {/* المكتب ثلاثي الأبعاد */}
+      <section className="relative h-[62vh] min-h-[420px] overflow-hidden rounded-2xl border border-black/10 dark:border-white/10 shadow-sm">
+        <Office3D
+          statuses={statuses}
+          inMeeting={inMeeting}
+          view={view}
+          viewNonce={viewNonce}
+          selected={selected}
+          onSelect={(id) => goTo(id)}
+        />
+        {selected && (
+          <div className="absolute bottom-3 right-3 max-w-xs rounded-xl bg-white/90 dark:bg-zinc-900/90 p-3 text-sm shadow-lg backdrop-blur">
+            <div className="font-bold">
+              {OFFICE_AGENTS[selected].emoji} {OFFICE_AGENTS[selected].name}
             </div>
-          );
-        })}
+            <div className="opacity-70">{OFFICE_AGENTS[selected].role}</div>
+            <div className="mt-1 text-xs">
+              {statuses[selected] === "working" ? "⏳ يعمل الآن" : statuses[selected] === "done" ? "✅ أنجز مهمته" : "متاح"}
+            </div>
+          </div>
+        )}
+        <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-black/40 px-2 py-1 text-[11px] text-white">
+          اسحب للتدوير • عجلة الفأرة للتكبير • اضغط على أي موظف
+        </div>
       </section>
 
       <div className="grid gap-4 md:grid-cols-2">
         <section className="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 p-4 space-y-3">
           <h2 className="font-bold">📋 مهمة جديدة لمصعب</h2>
           <textarea
+            ref={taskRef}
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
             placeholder="مثال: جهّز خطة إعلانية لإطلاق دورة تدريبية أونلاين خلال أسبوعين"
