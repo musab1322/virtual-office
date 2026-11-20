@@ -108,3 +108,6 @@ body {
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.15);
   font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif;
 }
+.call-btn { width: 56px; height: 56px; border-radius: 999px; font-size: 22px; display: grid; place-items: center; }
+.avatar-speaking { animation: speak 0.7s ease-in-out infinite; }
+@keyframes speak { 50% { box-shadow: 0 0 0 10px rgb(16 185 129 / 0.35); } }

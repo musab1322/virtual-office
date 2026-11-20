@@ -2,10 +2,16 @@
 
 import { useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { OFFICE_AGENTS, WORKER_IDS, type Gender } from "@/lib/agents";
+import { OFFICE_AGENTS, WORKER_IDS } from "@/lib/agents";
 import type { TaskResult } from "@/lib/orchestrator";
-import { addEmployee, removeEmployee, useEmployees } from "@/lib/employeeStore";
+import { addMeeting, addTasks, teamPayload, useOffice, useStorageMode } from "@/lib/officeStore";
 import type { CameraView, Person } from "./components/Office3D";
+import AddEmployeeDialog from "./components/AddEmployeeDialog";
+import CallDialog from "./components/CallDialog";
+import EmployeePanel, { performance } from "./components/EmployeePanel";
+import MeetingsArchive from "./components/MeetingsArchive";
+import { card, input, postJSON } from "./components/ui";
+import Avatar from "./components/Avatar";
 import { MAX_EMPLOYEES, MEETING_SEATS, seatsFor, type OfficeMode } from "./components/office/floorplan";
 
 type Status = "idle" | "working" | "done";
@@ -20,6 +26,7 @@ interface MeetingResult {
   topic: string;
   meetingUrl: string | null;
   meetingError: string | null;
+  teamsLinkEnabled?: boolean;
   minutes: string;
   teamsNotified: boolean;
 }
@@ -31,11 +38,11 @@ interface PrivateResult {
   reply: string;
 }
 
-const card = "rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 p-4";
-const input = "w-full rounded-lg border border-black/15 dark:border-white/15 bg-transparent p-3";
 
 export default function OfficePage() {
-  const employees = useEmployees();
+  const office = useOffice();
+  const storage = useStorageMode();
+  const employees = office.employees;
   const [goal, setGoal] = useState("");
   const [topic, setTopic] = useState("");
   const [privateTopic, setPrivateTopic] = useState("");
@@ -51,6 +58,8 @@ export default function OfficePage() {
   const [viewNonce, setViewNonce] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [panelFor, setPanelFor] = useState<string | null>(null);
+  const [call, setCall] = useState<{ id: string; video: boolean } | null>(null);
   const taskRef = useRef<HTMLTextAreaElement>(null);
   const privateRef = useRef<HTMLInputElement>(null);
 
@@ -80,16 +89,7 @@ export default function OfficePage() {
   const setAll = (s: Status, only?: string[]) =>
     setStatuses(Object.fromEntries((only ?? ids).map((id) => [id, s])));
 
-  async function post<T>(url: string, body: unknown): Promise<T> {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "حدث خطأ");
-    return data as T;
-  }
+  const setOne = (id: string, st: Status) => setStatuses((prev) => ({ ...prev, [id]: st }));
 
   async function dispatchTask() {
     if (!goal.trim()) return;
@@ -99,8 +99,23 @@ export default function OfficePage() {
     setMode({ kind: "desks" });
     setAll("working");
     try {
-      const data = await post<TaskResult & { teamsNotified: boolean }>("/api/dispatch-task", { goal, employees });
+      const data = await postJSON<TaskResult & { teamsNotified: boolean }>("/api/dispatch-task", {
+        goal,
+        employees: teamPayload(),
+      });
       setResult(data);
+      // تُسجَّل كل مهمة في ملف الموظف
+      addTasks(
+        data.deliverables.map((d) => ({
+          employeeId: d.agentId,
+          title: d.subtask,
+          goal: data.goal,
+          source: "manager" as const,
+          status: "done" as const,
+          result: d.deliverable,
+          doneAt: new Date().toISOString(),
+        }))
+      );
       const next: Record<string, Status> = { musab: "done" };
       for (const d of data.deliverables) next[d.agentId] = "done";
       setStatuses(next);
@@ -121,8 +136,15 @@ export default function OfficePage() {
     const attendees = ids.slice(0, MEETING_SEATS.length);
     setAll("working", attendees);
     try {
-      const data = await post<MeetingResult>("/api/team-meeting", { topic, employees });
+      const data = await postJSON<MeetingResult>("/api/team-meeting", { topic, employees: teamPayload() });
       setMeeting(data);
+      addMeeting({
+        kind: "team",
+        topic: data.topic,
+        participants: attendees.map((id) => byId[id]?.name ?? id),
+        minutes: data.minutes,
+        teamsUrl: data.meetingUrl,
+      });
       setAll("done", attendees);
     } catch (e) {
       setError((e as Error).message);
@@ -145,12 +167,18 @@ export default function OfficePage() {
     goTo("private");
     setAll("working", ["musab", guest]);
     try {
-      const data = await post<PrivateResult>("/api/private-meeting", {
+      const data = await postJSON<PrivateResult>("/api/private-meeting", {
         employeeId: guest,
         topic: privateTopic,
-        employees,
+        employees: teamPayload(),
       });
       setPrivateResult(data);
+      addMeeting({
+        kind: "private",
+        topic: data.topic,
+        participants: [OFFICE_AGENTS.musab.name, data.name],
+        minutes: data.reply,
+      });
       setAll("done", ["musab", guest]);
     } catch (e) {
       setError((e as Error).message);
@@ -166,7 +194,14 @@ export default function OfficePage() {
   }
 
   const sel = selected ? byId[selected] : null;
-  const selIsCustom = !!sel && sel.id.startsWith("emp_");
+  const panelPerson = panelFor ? byId[panelFor] : null;
+  const callPerson = call ? byId[call.id] : null;
+
+  // الضغط على موظف: تقريب الكاميرا وفتح ملفه
+  function openPerson(id: string) {
+    goTo(`agent:${id}`);
+    if (id !== "musab") setPanelFor(id);
+  }
 
   return (
     <main className="mx-auto w-full max-w-7xl p-4 md:p-6 space-y-4">
@@ -175,6 +210,15 @@ export default function OfficePage() {
           <h1 className="text-2xl md:text-3xl font-bold">🏢 المكتب الافتراضي</h1>
           <p className="text-sm opacity-70">مصعب يوزّع المهام على الفريق ويرسل التقرير إلى Microsoft Teams</p>
         </div>
+        <span className="rounded-full bg-black/5 dark:bg-white/10 px-3 py-1 text-xs" title="مكان حفظ بيانات المكتب">
+          {storage === "cloud"
+            ? "☁️ محفوظ في قاعدة البيانات"
+            : storage === "error"
+              ? "⚠️ تعذّر الحفظ في قاعدة البيانات (محفوظ محلياً)"
+              : storage === "local"
+                ? "💾 محفوظ في هذا المتصفح"
+                : "…"}
+        </span>
       </header>
 
       {/* شريط الأدوات */}
@@ -211,7 +255,7 @@ export default function OfficePage() {
             key={p.id}
             className={`tb ${view === `agent:${p.id}` ? "tb-active" : ""}`}
             style={{ ["--c" as string]: p.color }}
-            onClick={() => goTo(`agent:${p.id}`)}
+            onClick={() => openPerson(p.id)}
           >
             <span className="tb-dot" /> {p.name}
             {statuses[p.id] === "working" ? " ⏳" : statuses[p.id] === "done" ? " ✅" : ""}
@@ -229,7 +273,7 @@ export default function OfficePage() {
           view={view}
           viewNonce={viewNonce}
           selected={selected}
-          onSelect={(id) => goTo(`agent:${id}`)}
+          onSelect={openPerson}
           onEmptyDesk={() => !deskFull && setShowAdd(true)}
         />
         {sel && (
@@ -242,28 +286,9 @@ export default function OfficePage() {
               </div>
             </div>
             {!sel.manager && (
-              <div className="flex flex-wrap gap-2">
-                <button
-                  className="tb tb-teal"
-                  onClick={() => {
-                    setPrivateGuest(sel.id);
-                    privateRef.current?.focus();
-                  }}
-                >
-                  🔒 اجتماع خاص معه
-                </button>
-                {selIsCustom && (
-                  <button
-                    className="tb"
-                    onClick={() => {
-                      removeEmployee(sel.id);
-                      goTo("overview");
-                    }}
-                  >
-                    🗑️ حذف
-                  </button>
-                )}
-              </div>
+              <button className="tb tb-primary" onClick={() => setPanelFor(sel.id)}>
+                📂 ملف الموظف
+              </button>
             )}
           </div>
         )}
@@ -349,31 +374,34 @@ export default function OfficePage() {
             ➕ إضافة موظف
           </button>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {people.map((p) => (
-            <div
-              key={p.id}
-              className="flex items-center gap-2 rounded-xl border border-black/10 dark:border-white/10 px-3 py-2 text-sm"
-              style={{ borderInlineStartWidth: 4, borderInlineStartColor: p.color }}
-            >
-              <button className="text-start" onClick={() => goTo(`agent:${p.id}`)}>
-                <div className="font-semibold">{p.name}</div>
-                <div className="text-xs opacity-60">{p.role}</div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {staff.map((p) => {
+            const perf = performance(office.tasks.filter((t) => t.employeeId === p.id));
+            return (
+              <button
+                key={p.id}
+                onClick={() => openPerson(p.id)}
+                className="flex items-center gap-3 rounded-xl border border-black/10 dark:border-white/10 px-3 py-2 text-start text-sm hover:bg-black/[.03] dark:hover:bg-white/5"
+                style={{ borderInlineStartWidth: 4, borderInlineStartColor: p.color }}
+              >
+                <Avatar gender={p.gender} color={p.color} size={42} />
+                <div className="flex-1">
+                  <div className="font-semibold">
+                    {p.name} <span className="text-xs font-normal opacity-60">• {perf.level}</span>
+                  </div>
+                  <div className="text-xs opacity-60">{p.role}</div>
+                  <div className="mt-0.5 text-xs">
+                    ✅ {perf.done} منجزة • 🕒 {perf.pending} لم تُنجز
+                    {perf.avg ? ` • ⭐ ${perf.avg.toFixed(1)}` : ""}
+                  </div>
+                </div>
+                {statuses[p.id] === "working" && <span>⏳</span>}
               </button>
-              {p.id.startsWith("emp_") && (
-                <button
-                  title="حذف الموظف"
-                  className="rounded-md px-1.5 text-xs opacity-50 hover:bg-red-50 hover:text-red-600 hover:opacity-100"
-                  onClick={() => removeEmployee(p.id)}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
         <p className="text-xs opacity-60">
-          الموظفون الجدد يشاركون في المهام والاجتماعات، ويُحفظون في هذا المتصفح. المكاتب الشاغرة: {MAX_EMPLOYEES - staff.length}
+          اضغط على أي موظف لفتح ملفه: مهامه المنجزة والمعلّقة، المحادثة، الاتصال، والتطوير. المكاتب الشاغرة: {MAX_EMPLOYEES - staff.length}
         </p>
       </section>
 
@@ -416,9 +444,13 @@ export default function OfficePage() {
               نسخ المحضر
             </button>
           </div>
-          {meeting.meetingError && <p className="text-sm text-amber-600">⚠️ {meeting.meetingError}</p>}
+          {meeting.meetingError && (
+            <p className="text-sm text-amber-600">⚠️ لم يُنشأ رابط Teams: {meeting.meetingError}</p>
+          )}
           <p className="text-xs opacity-60">
-            {meeting.teamsNotified ? "✅ أُرسل الرابط والمحضر إلى قناة Teams" : "لم يُرسل إلى Teams (تحقق من TEAMS_WEBHOOK_URL)"}
+            {meeting.teamsLinkEnabled === false && "تم الاجتماع داخل المكتب الافتراضي (رابط Teams اختياري). "}
+            {meeting.teamsNotified ? "✅ أُرسل المحضر إلى قناة Teams" : ""}
+            {" "}حُفظ المحضر في أرشيف الاجتماعات.
           </p>
           <pre className="whitespace-pre-wrap text-sm leading-7 font-sans">{meeting.minutes}</pre>
         </section>
@@ -430,7 +462,7 @@ export default function OfficePage() {
             <h2 className="font-bold mb-2">🧑‍💼 ملخص مصعب</h2>
             <pre className="whitespace-pre-wrap text-sm leading-7 font-sans">{result.managerSummary}</pre>
             <p className="mt-2 text-xs opacity-60">
-              {result.teamsNotified ? "✅ أُرسل التقرير إلى Teams" : "لم يُرسل إلى Teams (تحقق من TEAMS_WEBHOOK_URL)"}
+              {result.teamsNotified ? "✅ أُرسل التقرير إلى Teams. " : ""}سُجّلت المهام في ملف كل موظف.
             </p>
           </div>
           {result.deliverables.map((d) => (
@@ -444,62 +476,25 @@ export default function OfficePage() {
         </section>
       )}
 
+      <MeetingsArchive />
+
       {showAdd && <AddEmployeeDialog onClose={() => setShowAdd(false)} />}
-    </main>
-  );
-}
-
-function AddEmployeeDialog({ onClose }: { onClose: () => void }) {
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("");
-  const [specialty, setSpecialty] = useState("");
-  const [gender, setGender] = useState<Gender>("m");
-  const valid = name.trim() && role.trim();
-
-  return (
-    <div className="fixed inset-0 z-[2000] grid place-items-center bg-black/40 p-4" onClick={onClose}>
-      <form
-        className={`${card} w-full max-w-md space-y-3 shadow-xl`}
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!valid) return;
-          addEmployee({ name: name.trim(), role: role.trim(), specialty: specialty.trim(), gender });
-          onClose();
-        }}
-      >
-        <h2 className="text-lg font-bold">➕ إضافة موظف جديد</h2>
-        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="الاسم (مثال: فهد)" className={input} maxLength={40} />
-        <input value={role} onChange={(e) => setRole(e.target.value)} placeholder="المسمى الوظيفي (مثال: محلل بيانات)" className={input} maxLength={60} />
-        <textarea
-          value={specialty}
-          onChange={(e) => setSpecialty(e.target.value)}
-          placeholder="ماذا يتقن؟ (يستخدمه الذكاء الاصطناعي لتحديد أسلوب عمله)"
-          className={`${input} min-h-20`}
-          maxLength={400}
+      {panelPerson && !callPerson && (
+        <EmployeePanel
+          person={panelPerson}
+          onClose={() => setPanelFor(null)}
+          onBusy={setOne}
+          onCall={(video) => setCall({ id: panelPerson.id, video })}
+          onPrivateMeeting={() => {
+            setPrivateGuest(panelPerson.id);
+            setPanelFor(null);
+            setTimeout(() => privateRef.current?.focus(), 50);
+          }}
         />
-        <div className="flex gap-2 text-sm">
-          {(
-            [
-              ["m", "رجل (ثوب وشماغ)"],
-              ["f", "امرأة (عباية)"],
-            ] as const
-          ).map(([g, label]) => (
-            <label key={g} className={`tb flex-1 justify-center ${gender === g ? "tb-active" : ""}`}>
-              <input type="radio" name="gender" className="sr-only" checked={gender === g} onChange={() => setGender(g)} />
-              {label}
-            </label>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <button type="submit" disabled={!valid} className="flex-1 rounded-lg bg-green-600 px-4 py-2 font-semibold text-white disabled:opacity-50">
-            إضافة وتخصيص مكتب
-          </button>
-          <button type="button" onClick={onClose} className="rounded-lg border px-4 py-2">
-            إلغاء
-          </button>
-        </div>
-      </form>
-    </div>
+      )}
+      {callPerson && call && (
+        <CallDialog person={callPerson} withVideo={call.video} onClose={() => setCall(null)} />
+      )}
+    </main>
   );
 }

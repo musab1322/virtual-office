@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { runTask } from "@/lib/orchestrator";
-import { parseCustomEmployees } from "@/lib/agents";
+import { parseTeamInput, buildRoster } from "@/lib/agents";
 import { notifyTeamsOnCompletion } from "@/lib/teamsNotifier";
 
 export const maxDuration = 300;
@@ -18,7 +18,8 @@ export async function POST(req: Request) {
   if (goal.length > 2000) return NextResponse.json({ error: "الهدف طويل جداً" }, { status: 400 });
 
   try {
-    const result = await runTask(goal, parseCustomEmployees(employees));
+    const roster = buildRoster(parseTeamInput(employees));
+    const result = await runTask(goal, roster);
     const teamsNotified = await notifyTeamsOnCompletion(
       result.goal,
       result.managerSummary,

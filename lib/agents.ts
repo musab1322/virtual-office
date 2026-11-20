@@ -23,34 +23,34 @@ export const OFFICE_AGENTS: Record<AgentId, OfficeAgent> = {
     role: "المدير العام",
     emoji: "🧑‍💼",
     color: "#2563eb",
-    systemPrompt: `أنت مصعب، المدير العام لمكتب افتراضي من وكلاء الذكاء الاصطناعي. تستلم هدفاً من صاحب العمل، فتقسمه إلى مهام فرعية وتوزعها على فريقك: كريم (مشتري الإعلانات وجلب الزيارات)، منى (أخصائية مسارات التحويل وصفحات الهبوط)، عمر (المساعد التنفيذي: التنظيم والجداول والمحاضر والمتابعة). تحدد الأولويات والجدول الزمني ثم تلخص النتائج. ${STYLE}`,
+    systemPrompt: `أنت مصعب، المدير العام لمكتب افتراضي من وكلاء الذكاء الاصطناعي. تستلم هدفاً من صاحب العمل، فتقسمه إلى مهام فرعية وتوزعها على فريقك: سلطان (مشتري الإعلانات وجلب الزيارات)، نورة (أخصائية مسارات التحويل وصفحات الهبوط)، عبدالعزيز (المساعد التنفيذي: التنظيم والجداول والمحاضر والمتابعة)، ومن يُضاف لاحقاً من الموظفين. تحدد الأولويات والجدول الزمني ثم تلخص النتائج. ${STYLE}`,
   },
   kareem: {
     id: "kareem",
     gender: "m",
-    name: "كريم",
+    name: "سلطان",
     role: "مشتري الإعلانات",
     emoji: "📣",
     color: "#ea580c",
-    systemPrompt: `أنت كريم، مشتري الإعلانات (Media Buyer). تخصصك: اختيار القنوات الإعلانية، الجمهور المستهدف، أفكار الإعلانات والنصوص، توزيع الميزانية، ومؤشرات الأداء. ${STYLE}`,
+    systemPrompt: `أنت سلطان، مشتري الإعلانات (Media Buyer). تخصصك: اختيار القنوات الإعلانية، الجمهور المستهدف، أفكار الإعلانات والنصوص، توزيع الميزانية، ومؤشرات الأداء. ${STYLE}`,
   },
   mona: {
     id: "mona",
     gender: "f",
-    name: "منى",
+    name: "نورة",
     role: "أخصائية مسارات التحويل",
     emoji: "🎯",
     color: "#db2777",
-    systemPrompt: `أنتِ منى، أخصائية مسارات التحويل (Funnel Specialist). تخصصك: رحلة العميل، صفحات الهبوط، العروض، رسائل المتابعة، وتحسين معدل التحويل. ${STYLE}`,
+    systemPrompt: `أنتِ نورة، أخصائية مسارات التحويل (Funnel Specialist). تخصصك: رحلة العميل، صفحات الهبوط، العروض، رسائل المتابعة، وتحسين معدل التحويل. ${STYLE}`,
   },
   omar: {
     id: "omar",
     gender: "m",
-    name: "عمر",
+    name: "عبدالعزيز",
     role: "المساعد التنفيذي",
     emoji: "📝",
     color: "#059669",
-    systemPrompt: `أنت عمر، المساعد التنفيذي. تخصصك: تحويل الخطط إلى جداول زمنية ومهام بمسؤولين ومواعيد، كتابة محاضر الاجتماعات الرسمية، وقوائم المتابعة. ${STYLE}`,
+    systemPrompt: `أنت عبدالعزيز، المساعد التنفيذي. تخصصك: تحويل الخطط إلى جداول زمنية ومهام بمسؤولين ومواعيد، كتابة محاضر الاجتماعات الرسمية، وقوائم المتابعة. ${STYLE}`,
   },
 };
 
@@ -80,28 +80,68 @@ export function customSystemPrompt(e: Pick<CustomEmployee, "name" | "role" | "sp
 
 const clean = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
-/** يتحقق من قائمة الموظفين القادمة من المتصفح ويحوّلها لأعضاء فريق */
-export function parseCustomEmployees(raw: unknown): TeamMember[] {
-  if (!Array.isArray(raw)) return [];
-  const out: TeamMember[] = [];
-  for (const item of raw.slice(0, 20)) {
+export interface TeamInput {
+  id: string;
+  name?: string;
+  role?: string;
+  specialty?: string;
+  development?: string[];
+}
+
+/** توجيهات المدير لتطوير الموظف تُضاف إلى تعليماته */
+function withDevelopment(prompt: string, notes: string[]) {
+  if (!notes.length) return prompt;
+  return `${prompt}\n\nتوجيهات المدير لتطوير أدائك (التزم بها دائماً):\n${notes.map((n) => `- ${n}`).join("\n")}`;
+}
+
+/**
+ * يتحقق من بيانات الفريق القادمة من المتصفح (موظفون جدد + توجيهات التطوير لأي موظف)
+ * ويعيد خريطة بالمعرّف. الأساسيون لا يمكن تغيير أسمائهم أو أدوارهم من هنا.
+ */
+export function parseTeamInput(raw: unknown): Map<string, TeamMember> {
+  const out = new Map<string, TeamMember>();
+  if (!Array.isArray(raw)) return out;
+  for (const item of raw.slice(0, 30)) {
     const r = (item ?? {}) as Record<string, unknown>;
     const id = clean(r.id, 40);
+    const dev = Array.isArray(r.development)
+      ? r.development.map((d) => clean(d, 300)).filter(Boolean).slice(0, 15)
+      : [];
+    if (id in OFFICE_AGENTS) {
+      const a = OFFICE_AGENTS[id as AgentId];
+      out.set(id, { id, name: a.name, role: a.role, systemPrompt: withDevelopment(a.systemPrompt, dev) });
+      continue;
+    }
     const name = clean(r.name, 40);
     const role = clean(r.role, 60);
     const specialty = clean(r.specialty, 400);
-    if (!/^emp_[a-z0-9]+$/i.test(id) || !name || !role) continue;
-    if (out.some((m) => m.id === id)) continue;
-    out.push({ id, name, role, systemPrompt: customSystemPrompt({ name, role, specialty }) });
+    if (!/^emp_[a-z0-9]+$/i.test(id) || !name || !role || out.has(id)) continue;
+    out.set(id, { id, name, role, systemPrompt: withDevelopment(customSystemPrompt({ name, role, specialty }), dev) });
   }
   return out;
 }
 
-/** الفريق الذي يوزّع عليه مصعب: الأساسيون + الموظفون الجدد */
-export function buildRoster(extra: TeamMember[] = []): TeamMember[] {
-  const core = WORKER_IDS.map((id) => {
-    const a = OFFICE_AGENTS[id];
-    return { id: a.id, name: a.name, role: a.role, systemPrompt: a.systemPrompt };
-  });
+/** للتوافق: الموظفون الجدد فقط من قائمة الفريق */
+export function parseCustomEmployees(raw: unknown): TeamMember[] {
+  return [...parseTeamInput(raw).values()].filter((m) => m.id.startsWith("emp_"));
+}
+
+function coreMember(id: AgentId): TeamMember {
+  const a = OFFICE_AGENTS[id];
+  return { id: a.id, name: a.name, role: a.role, systemPrompt: a.systemPrompt };
+}
+
+/** الفريق الذي يوزّع عليه مصعب: الأساسيون (مع توجيهاتهم) + الموظفون الجدد */
+export function buildRoster(team: Map<string, TeamMember> | TeamMember[] = []): TeamMember[] {
+  const map = Array.isArray(team) ? new Map(team.map((m) => [m.id, m])) : team;
+  const core = WORKER_IDS.map((id) => map.get(id) ?? coreMember(id));
+  const extra = [...map.values()].filter((m) => m.id.startsWith("emp_"));
   return [...core, ...extra];
+}
+
+/** موظف واحد بالمعرّف (أساسي أو جديد) */
+export function findMember(team: Map<string, TeamMember>, id: string): TeamMember | undefined {
+  if (team.has(id)) return team.get(id);
+  if (id in OFFICE_AGENTS) return coreMember(id as AgentId);
+  return undefined;
 }

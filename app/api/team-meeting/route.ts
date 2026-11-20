@@ -1,26 +1,27 @@
 import { NextResponse } from "next/server";
-import { OFFICE_AGENTS, parseCustomEmployees, type TeamMember } from "@/lib/agents";
+import { OFFICE_AGENTS, buildRoster, parseTeamInput, type TeamMember } from "@/lib/agents";
 import { createTeamsOnlineMeeting, isGraphConfigured } from "@/lib/graph";
 import { chat } from "@/lib/llm";
 import { notifyTeamsMeeting } from "@/lib/teamsNotifier";
 
 export const maxDuration = 120;
 
-// نقاش محاكى بين الوكلاء ومحضر يصوغه عمر.
+// نقاش محاكى بين الوكلاء ومحضر يصوغه عبدالعزيز (المساعد التنفيذي).
 // ملاحظة: هذا محضر لنقاش الفريق الافتراضي، وليس تفريغاً للاجتماع الحقيقي على Teams.
-async function generateMeetingMinutes(topic: string, extra: TeamMember[]) {
-  const extraLines = extra.map((m) => `\n- ${m.name} (${m.role}): يشارك من زاوية تخصصه.`).join("");
+async function generateMeetingMinutes(topic: string, roster: TeamMember[]) {
+  const secretary = roster.find((m) => m.id === "omar") ?? roster[0];
+  const participants = [
+    `- ${OFFICE_AGENTS.musab.name} (${OFFICE_AGENTS.musab.role}): يدير الاجتماع ويحدد الأولويات والجدول الزمني.`,
+    ...roster.map((m) => `- ${m.name} (${m.role}): يشارك من زاوية تخصصه${m.id === secretary.id ? " ويكتب المحضر الرسمي" : ""}.`),
+  ].join("\n");
   return chat(
     [
-      { role: "system", content: OFFICE_AGENTS.omar.systemPrompt },
+      { role: "system", content: secretary.systemPrompt },
       {
         role: "user",
-        content: `أنت تدير اجتماعاً لفريق المكتب الافتراضي حول: "${topic}".
+        content: `أنت تكتب محضر اجتماع لفريق المكتب الافتراضي حول: "${topic}".
 المشاركون:
-- مصعب (المدير العام): يحدد الأولويات والجدول الزمني.
-- كريم (مشتري الإعلانات): يقترح أفكار جلب الزيارات والإعلانات.
-- منى (أخصائية مسارات التحويل): تقترح خطوات التحويل وصفحات الهبوط.
-- عمر (المساعد التنفيذي): يكتب المحضر الرسمي.${extraLines}
+${participants}
 
 اكتب بالعربية:
 1. خلاصة مداخلة كل عضو (سطران لكل واحد).
@@ -30,34 +31,35 @@ async function generateMeetingMinutes(topic: string, extra: TeamMember[]) {
    - نقاط للمتابعة في الاجتماع القادم`,
       },
     ],
-    { maxTokens: 1800 }
+    { maxTokens: 2000 }
   );
 }
 
 export async function POST(req: Request) {
   const { topic: rawTopic, employees } = await req.json().catch(() => ({}));
-  const extra = parseCustomEmployees(employees);
+  const roster = buildRoster(parseTeamInput(employees));
   const topic = (typeof rawTopic === "string" && rawTopic.trim()) || "اجتماع الفريق الأسبوعي ومراجعة المهام";
 
   // ننشئ الاجتماع ونولّد المحضر بالتوازي
   const [meetingResult, minutesResult] = await Promise.allSettled([
     isGraphConfigured() ? createTeamsOnlineMeeting(topic) : Promise.resolve(null),
-    generateMeetingMinutes(topic, extra),
+    generateMeetingMinutes(topic, roster),
   ]);
 
   const meeting = meetingResult.status === "fulfilled" ? meetingResult.value : null;
+  // بدون إعدادات Azure يعمل الاجتماع داخل المكتب الافتراضي، ورابط Teams اختياري
+  const teamsLinkEnabled = isGraphConfigured();
   const meetingError =
-    meetingResult.status === "rejected"
-      ? (meetingResult.reason as Error).message
-      : !isGraphConfigured()
-        ? "إعدادات Azure غير مكتملة، لذلك لم يُنشأ رابط Teams."
-        : null;
+    meetingResult.status === "rejected" ? (meetingResult.reason as Error).message : null;
   const minutes = minutesResult.status === "fulfilled" ? minutesResult.value : "";
 
   if (!meeting && !minutes) {
     return NextResponse.json(
       {
-        error: meetingError || "تعذّر بدء الاجتماع",
+        error:
+          minutesResult.status === "rejected"
+            ? `تعذّر كتابة المحضر: ${(minutesResult.reason as Error).message}`
+            : meetingError || "تعذّر بدء الاجتماع",
         minutesError: minutesResult.status === "rejected" ? (minutesResult.reason as Error).message : undefined,
       },
       { status: 500 }
@@ -72,6 +74,7 @@ export async function POST(req: Request) {
     topic,
     meetingUrl: meeting?.joinWebUrl ?? null,
     meetingError,
+    teamsLinkEnabled,
     minutes,
     teamsNotified,
   });

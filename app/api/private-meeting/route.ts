@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { OFFICE_AGENTS, WORKER_IDS, parseCustomEmployees, type AgentId, type TeamMember } from "@/lib/agents";
+import { findMember, parseTeamInput } from "@/lib/agents";
 import { chat } from "@/lib/llm";
 
 export const maxDuration = 120;
@@ -15,13 +15,7 @@ export async function POST(req: Request) {
   const topic = typeof body.topic === "string" ? body.topic.trim().slice(0, 2000) : "";
   if (!topic) return NextResponse.json({ error: "اكتب موضوع الاجتماع الخاص" }, { status: 400 });
 
-  let member: TeamMember | undefined;
-  if ((WORKER_IDS as string[]).includes(employeeId)) {
-    const a = OFFICE_AGENTS[employeeId as AgentId];
-    member = { id: a.id, name: a.name, role: a.role, systemPrompt: a.systemPrompt };
-  } else {
-    member = parseCustomEmployees(body.employees).find((m) => m.id === employeeId);
-  }
+  const member = employeeId === "musab" ? undefined : findMember(parseTeamInput(body.employees), employeeId);
   if (!member) return NextResponse.json({ error: "الموظف غير موجود" }, { status: 404 });
 
   try {

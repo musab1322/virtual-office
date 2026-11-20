@@ -111,7 +111,7 @@ export async function notifyTeamsMeeting(
     [
       text(`🎥 اجتماع الفريق: ${topic}`, { weight: "Bolder", size: "Large" }),
       ...(joinUrl ? [] : [text("لم يُنشأ رابط Teams (إعدادات Azure غير مكتملة).", { color: "Warning" })]),
-      text("📝 **محضر نقاش الفريق الافتراضي (إعداد عمر):**"),
+      text("📝 **محضر نقاش الفريق الافتراضي (إعداد عبدالعزيز):**"),
       text(minutes.slice(0, 15_000), { size: "Small" }),
     ],
     joinUrl ? [{ type: "Action.OpenUrl", title: "انضمام لاجتماع Teams", url: joinUrl }] : []

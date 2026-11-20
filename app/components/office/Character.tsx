@@ -126,8 +126,10 @@ export function Character({
   const { id, gender } = person;
   const h = hash(id);
   const skin = SKIN[h % SKIN.length];
-  const redShemagh = person.manager || h % 2 === 0;
-  const hasBeard = gender === "m" && (person.manager || h % 3 !== 0);
+  // كل الرجال بنفس طلّة مصعب: شماغ أحمر وبشت أسود بحاشية ذهبية
+  const redShemagh = true;
+  const bisht = gender === "m";
+  const hasBeard = gender === "m";
 
   const [initialSeat] = useState(seat); // الموضع الأولي فقط؛ الحركة بعدها تتم في useFrame
   const root = useRef<THREE.Group>(null);
@@ -212,7 +214,7 @@ export function Character({
   });
 
   const robe = gender === "f" ? ABAYA : THOBE;
-  const sleeves = person.manager ? "#2a1f17" : robe;
+  const sleeves = bisht ? "#2a1f17" : robe;
 
   return (
     <group
@@ -258,7 +260,7 @@ export function Character({
           </mesh>
         )}
         {/* البشت الأسود بحاشية ذهبية للمدير */}
-        {person.manager && (
+        {bisht && (
           <group>
             <mesh position={[0, 0.27, -0.14]} castShadow>
               <boxGeometry args={[0.54, 0.66, 0.04]} />

@@ -84,9 +84,9 @@ async function summarize(goal: string, deliverables: Deliverable[]): Promise<str
   );
 }
 
-/** extraTeam: موظفون جدد أضافهم صاحب العمل من الواجهة (اختياري) */
-export async function runTask(goal: string, extraTeam: TeamMember[] = []): Promise<TaskResult> {
-  const roster = buildRoster(extraTeam);
+/** team: الفريق كاملاً كما بُني من الواجهة (اختياري؛ الافتراضي الفريق الأساسي) */
+export async function runTask(goal: string, team?: TeamMember[]): Promise<TaskResult> {
+  const roster = team?.length ? team : buildRoster();
   const plan = await makePlan(goal, roster);
   const deliverables = await Promise.all(
     plan.assignments.map((a) => runAgent(roster.find((m) => m.id === a.agentId)!, goal, a.subtask))

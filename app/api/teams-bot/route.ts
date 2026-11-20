@@ -1,5 +1,8 @@
 import { after, NextResponse } from "next/server";
 import { runTask } from "@/lib/orchestrator";
+import { isDbConfigured, loadState, updateState } from "@/lib/db";
+import { buildRoster, parseTeamInput } from "@/lib/agents";
+import { newId } from "@/lib/officeState";
 import { verifyTeamsHmac } from "@/lib/teamsAuth";
 import { notifyTeamsOnCompletion, notifyTeamsText } from "@/lib/teamsNotifier";
 
@@ -43,8 +46,40 @@ export async function POST(req: Request) {
   // Teams ينتظر الرد خلال ~5 ثوانٍ فقط، لذا نرد فوراً ونكمل العمل بعد الرد
   after(async () => {
     try {
-      const result = await runTask(goal);
+      // مع قاعدة البيانات: الفريق يشمل الموظفين الجدد وتوجيهات التطوير
+      let team;
+      if (isDbConfigured()) {
+        const st = await loadState().catch(() => null);
+        if (st) {
+          const ids = ["kareem", "mona", "omar", ...st.employees.map((e) => e.id)];
+          const input = ids.map((id) => ({
+            ...(st.employees.find((e) => e.id === id) ?? { id }),
+            development: st.development[id] ?? [],
+          }));
+          team = buildRoster(parseTeamInput(input));
+        }
+      }
+      const result = await runTask(goal, team);
       await notifyTeamsOnCompletion(result.goal, result.managerSummary, result.deliverables);
+      // نسجل المهام في ملف كل موظف (إذا كانت قاعدة البيانات مفعلة)
+      const now = new Date().toISOString();
+      await updateState((s) => ({
+        ...s,
+        tasks: [
+          ...s.tasks,
+          ...result.deliverables.map((d) => ({
+            id: newId("task"),
+            employeeId: d.agentId,
+            title: d.subtask,
+            goal: result.goal,
+            source: "teams" as const,
+            status: "done" as const,
+            result: d.deliverable,
+            createdAt: now,
+            doneAt: now,
+          })),
+        ],
+      })).catch(() => false);
     } catch (e) {
       await notifyTeamsText(`❌ تعذّر تنفيذ المهمة "${goal}": ${(e as Error).message}`);
     }
