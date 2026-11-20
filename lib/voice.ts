@@ -41,3 +41,14 @@ export function splitForSpeech(text: string, max = 190): string[] {
   if (cur) out.push(cur);
   return out;
 }
+
+/** مثل splitForSpeech لكن الجملة الأولى وحدها حتى يبدأ الصوت بأسرع وقت */
+export function speechChunks(text: string, max = 190): string[] {
+  const parts = splitForSpeech(text, max);
+  if (!parts.length) return parts;
+  const first = parts[0].match(/^[^.!?؟]+[.!?؟]/)?.[0]?.trim();
+  if (first && first.length >= 12 && first.length < parts[0].length) {
+    return [first, ...splitForSpeech(parts[0].slice(first.length), max), ...parts.slice(1)];
+  }
+  return parts;
+}

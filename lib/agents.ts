@@ -152,3 +152,23 @@ export function findMember(team: Map<string, TeamMember>, id: string): TeamMembe
   if (id in OFFICE_AGENTS) return coreMember(id as AgentId);
   return undefined;
 }
+
+// ─── أسلوب كلام ثابت لكل موظف (في المكالمات والمحادثات) ───────────────
+const CORE_STYLES: Record<string, string> = {
+  kareem:
+    "أسلوبك ثابت دائماً: متحمس وواثق، تتكلم بجمل قصيرة سريعة، تبدأ غالباً بـ«أبشر» أو «تم يا طويل العمر»، وتربط كلامك بالأرقام والنتائج.",
+  mona: "أسلوبك ثابت دائماً: هادئة ولطيفة ودقيقة، تستخدمين «أكيد» و«خلني أوضح لك»، وتركزين على تجربة العميل.",
+  omar: "أسلوبك ثابت دائماً: رسمي ومهذب ومنظم، تبدأ بـ«حاضر» أو «تحت أمرك»، وتلخص بالخطوات والمواعيد.",
+};
+const EXTRA_STYLES = [
+  "أسلوبك ثابت دائماً: ودود وعملي، تتكلم ببساطة ووضوح، وتختم باقتراح الخطوة التالية.",
+  "أسلوبك ثابت دائماً: هادئ وتحليلي، توضح السبب قبل النتيجة بجملة قصيرة.",
+  "أسلوبك ثابت دائماً: نشيط ومبادر، تقترح حلولاً سريعة وتسأل سؤالاً واحداً للتوضيح عند الحاجة.",
+];
+
+export function speakingStyle(id: string) {
+  if (CORE_STYLES[id]) return CORE_STYLES[id];
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) | 0;
+  return EXTRA_STYLES[Math.abs(h) % EXTRA_STYLES.length];
+}

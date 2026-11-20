@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { appendChat, getOffice, teamPayload } from "@/lib/officeStore";
 import Avatar from "./Avatar";
-import { splitForSpeech, voiceFor } from "@/lib/voice";
+import { speechChunks, splitForSpeech, voiceFor } from "@/lib/voice";
 import { postJSON } from "./ui";
 import type { Person } from "./office/Character";
 
@@ -173,24 +173,42 @@ export default function CallDialog({
     [person.gender]
   );
 
+  // صوت ثابت: بعد أن ينجح الصوت السعودي مرة، لا نبدّله أبداً بصوت المتصفح خلال المكالمة
+  const serverWorked = useRef(false);
   const speak = useCallback(
     async (text: string) => {
       if (serverTts.current) {
-        const chunks = splitForSpeech(text);
-        try {
-          let next = chunks.length ? fetchClip(chunks[0]) : null;
-          for (let i = 0; i < chunks.length && next; i++) {
-            const url = await next;
-            next = i + 1 < chunks.length ? fetchClip(chunks[i + 1]) : null;
-            if (!active.current) return;
-            await playUrl(url);
-            URL.revokeObjectURL(url);
+        const chunks = speechChunks(text);
+        const clip = async (t: string): Promise<string | Error> => {
+          for (let attempt = 0; ; attempt++) {
+            try {
+              return await fetchClip(t);
+            } catch (e) {
+              if (attempt >= 2) return e as Error;
+              await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+            }
           }
-          return;
-        } catch (e) {
-          serverTts.current = false;
-          setVoiceNote(`الصوت السعودي غير متاح الآن، نستخدم صوت المتصفح. (${(e as Error).message})`);
+        };
+        let next = chunks.length ? clip(chunks[0]) : null;
+        for (let i = 0; i < chunks.length && next; i++) {
+          const r = await next;
+          next = i + 1 < chunks.length ? clip(chunks[i + 1]) : null;
+          if (!active.current) return;
+          if (r instanceof Error) {
+            if (!serverWorked.current) {
+              serverTts.current = false;
+              setVoiceNote(`الصوت السعودي غير متاح الآن، نستخدم صوت المتصفح. (${r.message})`);
+              await browserSpeak(chunks.slice(i).join(" "));
+              return;
+            }
+            setVoiceNote("تعذّر نطق جزء من الرد، تجده مكتوباً بالأسفل.");
+            continue;
+          }
+          serverWorked.current = true;
+          await playUrl(r);
+          URL.revokeObjectURL(r);
         }
+        return;
       }
       await browserSpeak(text);
     },
@@ -306,6 +324,10 @@ export default function CallDialog({
         try {
           const fd = new FormData();
           fd.append("audio", new Blob(chunks, { type: rec.mimeType || mime || "audio/webm" }), "speech");
+          fd.append(
+            "names",
+            [person.name, "مصعب", "سلطان", "نورة", "عبدالعزيز", ...getOffice().employees.map((e) => e.name)].join(",")
+          );
           const res = await fetch("/api/stt", { method: "POST", body: fd });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.error || "تعذّر فهم الصوت");
@@ -346,9 +368,9 @@ export default function CallDialog({
         return;
       }
       if (rms >= threshold) lastVoice = now;
-      if (now - lastVoice > 1300 || now - speechAt > 25000) finish(now - speechAt > 300);
+      if (now - lastVoice > 1100 || now - speechAt > 25000) finish(now - speechAt > 300);
     }, 60);
-  }, [ensureMic]);
+  }, [ensureMic, person.name]);
 
   useEffect(() => {
     listenRef.current = () => void listen();

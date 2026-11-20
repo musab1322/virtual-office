@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { OFFICE_AGENTS, findMember, parseTeamInput } from "@/lib/agents";
+import { OFFICE_AGENTS, findMember, parseTeamInput, speakingStyle } from "@/lib/agents";
 import { chat, type ChatMessage } from "@/lib/llm";
 
 export const maxDuration = 120;
@@ -40,15 +40,15 @@ export async function POST(req: Request) {
         [
           {
             role: "system",
-            content: `${member.systemPrompt}\nأنت تتحدث الآن مباشرة مع صاحب العمل (مديرك). ${
+            content: `${member.systemPrompt}\n${speakingStyle(member.id)}\nأنت تتحدث الآن مباشرة مع صاحب العمل (مديرك). ${
               call
-                ? "هذه مكالمة صوتية: أجب بجمل قصيرة طبيعية (من جملتين إلى أربع)، بلهجة سعودية مهذبة، وبدون رموز أو قوائم أو تنسيق."
+                ? "هذه مكالمة صوتية سريعة مثل النقاش: رد بجملة أو جملتين قصيرتين فقط (أقل من 35 كلمة)، بلهجة سعودية طبيعية، بدون رموز أو قوائم أو أرقام نقاط. إذا كان الكلام غير واضح اطلب التوضيح بجملة واحدة."
                 : "أجب بإيجاز ووضوح."
             }`,
           },
           ...history,
         ],
-        { maxTokens: call ? 300 : 900, temperature: 0.6 }
+        call ? { maxTokens: 120, temperature: 0.35 } : { maxTokens: 900, temperature: 0.5 }
       );
       return NextResponse.json({ reply });
     }
