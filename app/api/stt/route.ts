@@ -1,7 +1,7 @@
 // تحويل صوت المستخدم إلى نص من الخادم عبر Groq Whisper
 // (لا يعتمد على دعم المتصفح للتعرف على الكلام، فيعمل على كل المتصفحات والجوال)
 const BASE_URL = process.env.LLM_BASE_URL || "https://api.groq.com/openai/v1";
-const STT_MODEL = process.env.STT_MODEL || "whisper-large-v3-turbo";
+const STT_MODEL = process.env.STT_MODEL || "whisper-large-v3"; // الأدق في العربية
 const MAX_BYTES = 10 * 1024 * 1024;
 
 export const maxDuration = 30;
@@ -26,6 +26,16 @@ export async function POST(req: Request) {
   out.append("language", "ar");
   out.append("response_format", "json");
   out.append("temperature", "0");
+  // تلميح للنموذج: اللهجة السعودية وأسماء الفريق ومصطلحات العمل، فيفهم الكلمات بدقة أعلى
+  const names = String(form?.get("names") ?? "")
+    .split(",")
+    .map((n) => n.trim().slice(0, 30))
+    .filter(Boolean)
+    .slice(0, 20);
+  out.append(
+    "prompt",
+    `مكالمة عمل باللهجة السعودية مع ${names.join("، ") || "الفريق"}. نتكلم عن الإعلانات والحملات والميزانية والعملاء وصفحات الهبوط والمهام والاجتماعات. وش، أبي، زين، طيب، يعطيك العافية.`
+  );
 
   const res = await fetch(`${BASE_URL}/audio/transcriptions`, {
     method: "POST",
