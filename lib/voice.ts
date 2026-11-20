@@ -6,6 +6,7 @@ const CORE_VOICES: Record<string, string> = {
   abdulrahman: "fahad",
   khalid: "sultan",
   majed: "abdullah",
+  nawaf: "sultan",
   latifa: "lulwa",
   ruqayya: "noura",
   sahar: "aisha",

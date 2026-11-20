@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { MANAGER_ID, OFFICE_AGENTS, findMember, parseTeamInput, speakingStyle } from "@/lib/agents";
-import { chat, type ChatMessage } from "@/lib/llm";
+import { MANAGER_ID, OFFICE_AGENTS, findMember, parseTeamInput, speakingStyle, type AgentId } from "@/lib/agents";
+import { chat, research, type ChatMessage } from "@/lib/llm";
 
 export const maxDuration = 120;
 
@@ -104,12 +104,26 @@ ${tasks.join("\n") || "لا توجد مهام مسجلة بعد."}
         const fb = str(r.feedback, 200);
         return `- ${str(r.title, 160)}${typeof r.rating === "number" ? ` (تقييم ${r.rating}/5)` : ""}${fb ? ` — ملاحظة المدير: ${fb}` : ""}`;
       });
+      // نواف (وكيل المهارات) يبحث في الإنترنت عن أحدث مهارة/أداة في مجال الموظف، ثم يستوعبها الموظف
+      const isHead = Boolean(OFFICE_AGENTS[member.id as AgentId]?.head);
+      const found = await research(
+        [
+          { role: "system", content: OFFICE_AGENTS.nawaf.systemPrompt },
+          {
+            role: "user",
+            content: `ابحث في الإنترنت عن مهارة أو أداة أو أسلوب حديث واحد (من آخر سنتين) يرفع أداء ${member.name} (${member.role})${
+              isHead ? "، مع تجربة ناجحة لجمعية خيرية في نفس مجال إدارته" : ""
+            }. تجنّب ما تعلّمه سابقاً: ${prev.join("، ") || "لا شيء"}. اذكر المصدر وطريقة التطبيق باختصار.`,
+          },
+        ],
+        { maxTokens: 900 }
+      ).catch(() => ({ text: "", web: false }));
       const raw = await chat(
         [
           { role: "system", content: member.systemPrompt },
           {
             role: "user",
-            content: `حان وقت جلسة التطوير الذاتي اليومية. اختر مهارة أو أسلوباً عملياً واحداً جديداً في مجال تخصصك (${member.role}) يرفع جودة عملك، وتعلّمه بعمق.
+            content: `${found.text ? `زوّدك نواف (وكيل البحث والتطوير والمهارات) بهذا من بحثه في الإنترنت:\n${found.text.slice(0, 2500)}\n\n` : ""}حان وقت جلسة التطوير الذاتي اليومية. اختر مهارة أو أسلوباً عملياً واحداً جديداً في مجال تخصصك (${member.role}) يرفع جودة عملك، وتعلّمه بعمق${isHead ? "، واستفد من تجارب الجمعيات الخيرية الأخرى في مجال إدارتك" : ""}.
 ${prev.length ? `مواضيع تعلمتها سابقاً (لا تكررها، وابنِ عليها):\n${prev.map((p) => `- ${p}`).join("\n")}` : ""}
 ${tasks.length ? `آخر مهامك (استفد منها في اختيار ما ينقصك):\n${tasks.join("\n")}` : ""}
 
@@ -123,7 +137,11 @@ ${tasks.length ? `آخر مهامك (استفد منها في اختيار ما 
       const takeaways = (Array.isArray(r.takeaways) ? r.takeaways : []).map((x: unknown) => str(x, 250)).filter(Boolean).slice(0, 4);
       const topic = str(r.topic, 120);
       if (!topic || !takeaways.length) throw new Error("لم يكتمل التعلم، حاول مرة أخرى");
-      return NextResponse.json({ topic, summary: str(r.summary, 600), takeaways });
+      return NextResponse.json({
+        topic,
+        summary: `${str(r.summary, 600)}${found.web ? " (من بحث نواف في الإنترنت)" : ""}`,
+        takeaways,
+      });
     }
 
     return NextResponse.json({ error: "إجراء غير معروف" }, { status: 400 });

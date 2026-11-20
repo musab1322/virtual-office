@@ -495,7 +495,8 @@ export default function OfficePage() {
             <details key={`${d.agentId}-${d.stage ?? ""}`} className={card} open={d.stage !== "execute"}>
               <summary className="cursor-pointer font-semibold">
                 <span className="tb-dot" style={{ ["--c" as string]: byId[d.agentId]?.color }} />{" "}
-                {d.stage === "review" ? "✅ تدقيق: " : d.stage === "department" ? "🏢 خلاصة الإدارة: " : ""}
+                {d.stage === "review" ? "✅ تدقيق: " : d.stage === "department" ? "🏢 خلاصة الإدارة: " : d.stage === "research" ? "🔎 بحث في الخلفية: " : ""}
+                {d.web ? "🌐 " : ""}
                 {d.agentName} ({d.role}) — {d.subtask}
               </summary>
               <pre className="mt-3 whitespace-pre-wrap text-sm leading-7 font-sans">{d.deliverable}</pre>

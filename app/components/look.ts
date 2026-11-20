@@ -8,7 +8,7 @@ function hash(s: string) {
 }
 
 // الفريق الأساسي: تنويع ثابت بين الشماغ الأحمر والغترة البيضاء
-const CORE_RED: Record<string, boolean> = { musaed: true, othman: false, faisal: true, abdulrahman: false, khalid: true, majed: false };
+const CORE_RED: Record<string, boolean> = { musaed: true, othman: false, faisal: true, abdulrahman: false, khalid: true, majed: false, nawaf: true };
 
 /** الشماغ يتنوع بين الأحمر والغترة البيضاء؛ مساعد دائماً بالأحمر */
 export function personLook(p: { id: string; manager?: boolean }) {
