@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { appendChat, getOffice, teamPayload } from "@/lib/officeStore";
 import Avatar from "./Avatar";
+import { splitForSpeech, voiceFor } from "@/lib/voice";
 import { postJSON } from "./ui";
 import type { Person } from "./office/Character";
 
@@ -96,22 +97,102 @@ export default function CallDialog({
     return () => stream?.getTracks().forEach((t) => t.stop());
   }, [camOn]);
 
-  const speak = useCallback(
-    (text: string) =>
-      new Promise<void>((resolve) => {
-        const synth = window.speechSynthesis;
-        if (!synth) return resolve();
-        synth.cancel();
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = "ar-SA";
-        const v = pickVoice(person.gender);
-        if (v) u.voice = v;
-        u.rate = 1;
-        u.onend = () => resolve();
-        u.onerror = () => resolve();
-        synth.speak(u);
-      }),
+  // ─── النطق: صوت سعودي من الخادم أولاً، ثم أصوات المتصفح كبديل ───
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const serverTts = useRef(true);
+  const tapResolve = useRef<(() => void) | null>(null);
+  const [needTap, setNeedTap] = useState(false);
+  const [voiceNote, setVoiceNote] = useState<string | null>(null);
+
+  const fetchClip = useCallback(
+    async (text: string) => {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice: voiceFor(person) }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `TTS ${res.status}`);
+      }
+      return URL.createObjectURL(await res.blob());
+    },
+    [person]
+  );
+
+  const playUrl = useCallback(async (url: string) => {
+    const a = (audio.current ??= new Audio());
+    a.src = url;
+    try {
+      await a.play();
+    } catch (e) {
+      if ((e as DOMException).name !== "NotAllowedError") throw e;
+      // المتصفح منع التشغيل التلقائي: نطلب ضغطة من المستخدم
+      setNeedTap(true);
+      await new Promise<void>((r) => (tapResolve.current = r));
+      setNeedTap(false);
+      await a.play();
+    }
+    await new Promise<void>((resolve) => {
+      a.onended = () => resolve();
+      a.onerror = () => resolve();
+      a.onpause = () => resolve();
+    });
+  }, []);
+
+  const browserSpeak = useCallback(
+    async (text: string) => {
+      const synth = window.speechSynthesis;
+      if (!synth) {
+        setVoiceNote("متصفحك لا يدعم النطق الصوتي.");
+        return;
+      }
+      if (!synth.getVoices().length) {
+        await new Promise<void>((r) => {
+          synth.onvoiceschanged = () => r();
+          setTimeout(r, 1200);
+        });
+      }
+      const v = pickVoice(person.gender);
+      if (!v) setVoiceNote("لا يوجد صوت عربي مثبت في جهازك، لذلك قد لا تسمع الرد. أضف اللغة العربية لنظام التشغيل أو استخدم Edge.");
+      for (const chunk of splitForSpeech(text)) {
+        if (!active.current) return;
+        await new Promise<void>((resolve) => {
+          synth.cancel();
+          const u = new SpeechSynthesisUtterance(chunk);
+          u.lang = "ar-SA";
+          if (v) u.voice = v;
+          u.onend = () => resolve();
+          u.onerror = () => resolve();
+          synth.speak(u);
+        });
+      }
+    },
     [person.gender]
+  );
+
+  const speak = useCallback(
+    async (text: string) => {
+      if (serverTts.current) {
+        const chunks = splitForSpeech(text);
+        try {
+          let next = chunks.length ? fetchClip(chunks[0]) : null;
+          for (let i = 0; i < chunks.length && next; i++) {
+            const url = await next;
+            next = i + 1 < chunks.length ? fetchClip(chunks[i + 1]) : null;
+            if (!active.current) return;
+            await playUrl(url);
+            URL.revokeObjectURL(url);
+          }
+          return;
+        } catch (e) {
+          serverTts.current = false;
+          setVoiceNote(`الصوت السعودي غير متاح الآن، نستخدم صوت المتصفح. (${(e as Error).message})`);
+        }
+      }
+      await browserSpeak(text);
+    },
+    [fetchClip, playUrl, browserSpeak]
   );
 
   const listenRef = useRef<() => void>(() => {});
@@ -204,6 +285,8 @@ export default function CallDialog({
       clearTimeout(t);
       rec.current?.abort();
       window.speechSynthesis?.cancel();
+      audio.current?.pause();
+      tapResolve.current?.();
     };
   }, [person.name, speak]);
 
@@ -267,6 +350,15 @@ export default function CallDialog({
               متصفحك لا يدعم التحدث الصوتي. استخدم Chrome أو Edge، أو اكتب رسالتك هنا وسيرد عليك بصوته.
             </p>
           )}
+          {needTap && (
+            <button
+              className="w-full rounded-lg bg-emerald-600 px-4 py-2 font-semibold"
+              onClick={() => tapResolve.current?.()}
+            >
+              🔊 اضغط هنا لتشغيل الصوت
+            </button>
+          )}
+          {voiceNote && <p className="text-xs text-amber-300">{voiceNote}</p>}
           {error && <p className="text-red-300">{error}</p>}
           {(!Recognizer || muted) && (
             <form
