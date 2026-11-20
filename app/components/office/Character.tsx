@@ -16,6 +16,8 @@ export interface Person {
   color: string;
   gender: "m" | "f";
   manager?: boolean;
+  voice?: string; // صوت المكالمات إن اختاره صاحب العمل
+  department?: string; // مكانه في الهيكل التنظيمي
 }
 
 const THOBE = "#f7f7f4";

@@ -9,6 +9,8 @@ import type { CameraView, Person } from "./components/Office3D";
 import AddEmployeeDialog from "./components/AddEmployeeDialog";
 import CallDialog from "./components/CallDialog";
 import EmployeePanel, { performance } from "./components/EmployeePanel";
+import OrgStructure from "./components/OrgStructure";
+import { departmentLabel } from "@/lib/officeState";
 import { useAutoLearning, useLearningNow } from "@/lib/selfLearning";
 import MeetingsArchive from "./components/MeetingsArchive";
 import { card, input, postJSON } from "./components/ui";
@@ -72,8 +74,19 @@ export default function OfficePage() {
         return { id, name: a.name, role: a.role, color: a.color, gender: a.gender, manager: id === "musab" };
       }),
       ...employees.map((e) => ({ id: e.id, name: e.name, role: e.role, color: e.color, gender: e.gender })),
-    ],
-    [employees]
+    ].map((p) => {
+      // تعديلات صاحب العمل على الاسم والمسمى والصوت والقسم
+      const edit = office.profiles[p.id];
+      if (p.id === "musab") return p;
+      return {
+        ...p,
+        name: edit?.name || p.name,
+        role: edit?.role || p.role,
+        voice: edit?.voice,
+        department: departmentLabel(office, p.id) || undefined,
+      };
+    }),
+    [employees, office]
   );
   const byId = useMemo(() => Object.fromEntries(people.map((p) => [p.id, p])), [people]);
   const ids = useMemo(() => people.map((p) => p.id), [people]);
@@ -392,7 +405,10 @@ export default function OfficePage() {
                   <div className="font-semibold">
                     {p.name} <span className="text-xs font-normal opacity-60">• {perf.level}</span>
                   </div>
-                  <div className="text-xs opacity-60">{p.role}</div>
+                  <div className="text-xs opacity-60">
+                    {p.role}
+                    {p.department ? ` • ${p.department}` : ""}
+                  </div>
                   <div className="mt-0.5 text-xs">
                     ✅ {perf.done} منجزة • 🕒 {perf.pending} لم تُنجز
                     {perf.avg ? ` • ⭐ ${perf.avg.toFixed(1)}` : ""}
@@ -409,6 +425,8 @@ export default function OfficePage() {
           اضغط على أي موظف لفتح ملفه: مهامه المنجزة والمعلّقة، المحادثة، الاتصال، والتطوير. المكاتب الشاغرة: {MAX_EMPLOYEES - staff.length}
         </p>
       </section>
+
+      <OrgStructure staff={staff} onOpen={openPerson} />
 
       {error && (
         <div className="rounded-lg border border-red-400 bg-red-50 dark:bg-red-950/40 p-3 text-sm text-red-700 dark:text-red-300">
