@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { OFFICE_AGENTS } from "@/lib/agents";
+import { OFFICE_AGENTS, parseCustomEmployees, type TeamMember } from "@/lib/agents";
 import { createTeamsOnlineMeeting, isGraphConfigured } from "@/lib/graph";
 import { chat } from "@/lib/llm";
 import { notifyTeamsMeeting } from "@/lib/teamsNotifier";
@@ -8,7 +8,8 @@ export const maxDuration = 120;
 
 // نقاش محاكى بين الوكلاء ومحضر يصوغه عمر.
 // ملاحظة: هذا محضر لنقاش الفريق الافتراضي، وليس تفريغاً للاجتماع الحقيقي على Teams.
-async function generateMeetingMinutes(topic: string) {
+async function generateMeetingMinutes(topic: string, extra: TeamMember[]) {
+  const extraLines = extra.map((m) => `\n- ${m.name} (${m.role}): يشارك من زاوية تخصصه.`).join("");
   return chat(
     [
       { role: "system", content: OFFICE_AGENTS.omar.systemPrompt },
@@ -19,7 +20,7 @@ async function generateMeetingMinutes(topic: string) {
 - مصعب (المدير العام): يحدد الأولويات والجدول الزمني.
 - كريم (مشتري الإعلانات): يقترح أفكار جلب الزيارات والإعلانات.
 - منى (أخصائية مسارات التحويل): تقترح خطوات التحويل وصفحات الهبوط.
-- عمر (المساعد التنفيذي): يكتب المحضر الرسمي.
+- عمر (المساعد التنفيذي): يكتب المحضر الرسمي.${extraLines}
 
 اكتب بالعربية:
 1. خلاصة مداخلة كل عضو (سطران لكل واحد).
@@ -34,13 +35,14 @@ async function generateMeetingMinutes(topic: string) {
 }
 
 export async function POST(req: Request) {
-  const { topic: rawTopic } = await req.json().catch(() => ({}));
+  const { topic: rawTopic, employees } = await req.json().catch(() => ({}));
+  const extra = parseCustomEmployees(employees);
   const topic = (typeof rawTopic === "string" && rawTopic.trim()) || "اجتماع الفريق الأسبوعي ومراجعة المهام";
 
   // ننشئ الاجتماع ونولّد المحضر بالتوازي
   const [meetingResult, minutesResult] = await Promise.allSettled([
     isGraphConfigured() ? createTeamsOnlineMeeting(topic) : Promise.resolve(null),
-    generateMeetingMinutes(topic),
+    generateMeetingMinutes(topic, extra),
   ]);
 
   const meeting = meetingResult.status === "fulfilled" ? meetingResult.value : null;

@@ -1,8 +1,8 @@
-import { OFFICE_AGENTS, WORKER_IDS, type AgentId } from "@/lib/agents";
+import { OFFICE_AGENTS, buildRoster, type TeamMember } from "@/lib/agents";
 import { chat } from "@/lib/llm";
 
 export interface Deliverable {
-  agentId: AgentId;
+  agentId: string;
   agentName: string;
   role: string;
   subtask: string;
@@ -18,10 +18,12 @@ export interface TaskResult {
 
 interface Plan {
   planSummary: string;
-  assignments: { agentId: AgentId; subtask: string }[];
+  assignments: { agentId: string; subtask: string }[];
 }
 
-async function makePlan(goal: string): Promise<Plan> {
+async function makePlan(goal: string, roster: TeamMember[]): Promise<Plan> {
+  const team = roster.map((m) => `- ${m.id}: ${m.name} (${m.role})`).join("\n");
+  const ids = roster.map((m) => `"${m.id}"`).join(" | ");
   const raw = await chat(
     [
       { role: "system", content: OFFICE_AGENTS.musab.systemPrompt },
@@ -29,8 +31,11 @@ async function makePlan(goal: string): Promise<Plan> {
         role: "user",
         content: `الهدف: "${goal}"
 
+فريقك الحالي (المعرّف: الاسم والدور):
+${team}
+
 وزّع العمل على الفريق المناسب فقط (لا يلزم إشراك الجميع). أعد JSON فقط بهذا الشكل:
-{"planSummary": "خطة مختصرة في سطرين", "assignments": [{"agentId": "kareem" | "mona" | "omar", "subtask": "وصف المهمة الفرعية"}]}`,
+{"planSummary": "خطة مختصرة في سطرين", "assignments": [{"agentId": ${ids}, "subtask": "وصف المهمة الفرعية"}]}`,
       },
     ],
     { json: true, temperature: 0.3 }
@@ -38,7 +43,7 @@ async function makePlan(goal: string): Promise<Plan> {
 
   const parsed = JSON.parse(raw) as Partial<Plan>;
   const assignments = (parsed.assignments || []).filter(
-    (a) => a && WORKER_IDS.includes(a.agentId) && typeof a.subtask === "string"
+    (a) => a && roster.some((m) => m.id === a.agentId) && typeof a.subtask === "string"
   );
   if (assignments.length === 0) {
     // خطة احتياطية إذا لم يرجع النموذج توزيعاً صالحاً
@@ -47,8 +52,7 @@ async function makePlan(goal: string): Promise<Plan> {
   return { planSummary: parsed.planSummary || "", assignments };
 }
 
-async function runAgent(agentId: AgentId, goal: string, subtask: string): Promise<Deliverable> {
-  const agent = OFFICE_AGENTS[agentId];
+async function runAgent(agent: TeamMember, goal: string, subtask: string): Promise<Deliverable> {
   let deliverable: string;
   try {
     deliverable = await chat([
@@ -61,7 +65,7 @@ async function runAgent(agentId: AgentId, goal: string, subtask: string): Promis
   } catch (e) {
     deliverable = `⚠️ تعذّر إنجاز المهمة: ${(e as Error).message}`;
   }
-  return { agentId, agentName: agent.name, role: agent.role, subtask, deliverable };
+  return { agentId: agent.id, agentName: agent.name, role: agent.role, subtask, deliverable };
 }
 
 async function summarize(goal: string, deliverables: Deliverable[]): Promise<string> {
@@ -80,10 +84,12 @@ async function summarize(goal: string, deliverables: Deliverable[]): Promise<str
   );
 }
 
-export async function runTask(goal: string): Promise<TaskResult> {
-  const plan = await makePlan(goal);
+/** extraTeam: موظفون جدد أضافهم صاحب العمل من الواجهة (اختياري) */
+export async function runTask(goal: string, extraTeam: TeamMember[] = []): Promise<TaskResult> {
+  const roster = buildRoster(extraTeam);
+  const plan = await makePlan(goal, roster);
   const deliverables = await Promise.all(
-    plan.assignments.map((a) => runAgent(a.agentId, goal, a.subtask))
+    plan.assignments.map((a) => runAgent(roster.find((m) => m.id === a.agentId)!, goal, a.subtask))
   );
   const managerSummary = await summarize(goal, deliverables).catch(() => plan.planSummary);
   return { goal, planSummary: plan.planSummary, managerSummary, deliverables };

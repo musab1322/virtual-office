@@ -93,3 +93,18 @@ body {
 .agent-tag .dot.done { background: #22c55e; }
 @keyframes pulse { 50% { opacity: 0.3; } }
 .agent-tag-wrap { position: absolute; top: 0; left: 0; transform-origin: 50% 100%; pointer-events: auto; will-change: transform; }
+.tb-teal { background: #0d9488; border-color: #0f766e; color: #fff; }
+.tb-teal:hover:not(:disabled) { background: #0f766e; }
+.tb-green { background: #16a34a; border-color: #15803d; color: #fff; }
+.tb-green:hover:not(:disabled) { background: #15803d; }
+.room-tag {
+  white-space: nowrap;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.85);
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.15);
+  font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif;
+}
