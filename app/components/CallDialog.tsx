@@ -7,34 +7,6 @@ import { splitForSpeech, voiceFor } from "@/lib/voice";
 import { postJSON } from "./ui";
 import type { Person } from "./office/Character";
 
-// ─── أنواع مبسطة لواجهة التعرف على الصوت في المتصفح ─────────────────
-interface SRResult {
-  isFinal: boolean;
-  0: { transcript: string };
-}
-interface SREvent {
-  resultIndex: number;
-  results: ArrayLike<SRResult>;
-}
-interface SpeechRec {
-  lang: string;
-  interimResults: boolean;
-  continuous: boolean;
-  onresult: ((e: SREvent) => void) | null;
-  onerror: ((e: { error: string }) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
-}
-type SRCtor = new () => SpeechRec;
-
-function getRecognizer(): SRCtor | null {
-  if (typeof window === "undefined") return null;
-  const w = window as unknown as { SpeechRecognition?: SRCtor; webkitSpeechRecognition?: SRCtor };
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
-}
-
 function pickVoice(gender: "m" | "f") {
   const voices = window.speechSynthesis?.getVoices() ?? [];
   const ar = voices.filter((v) => v.lang.toLowerCase().startsWith("ar"));
@@ -92,7 +64,6 @@ export default function CallDialog({
   withVideo: boolean;
   onClose: () => void;
 }) {
-  const Recognizer = getRecognizer();
   const [phase, setPhase] = useState<Phase>("idle");
   const [muted, setMuted] = useState(false);
   const [camOn, setCamOn] = useState(withVideo);
@@ -102,7 +73,6 @@ export default function CallDialog({
   const [error, setError] = useState<string | null>(null);
   const [seconds, setSeconds] = useState(0);
   const video = useRef<HTMLVideoElement>(null);
-  const rec = useRef<SpeechRec | null>(null);
   const active = useRef(true);
   const mutedRef = useRef(false);
   const history = useRef<{ role: "user" | "assistant"; content: string }[]>(
@@ -141,7 +111,7 @@ export default function CallDialog({
       const res = await fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voice: voiceFor(person) }),
+        body: JSON.stringify({ text, voice: voiceFor({ id: person.id, gender: person.gender }) }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -149,7 +119,7 @@ export default function CallDialog({
       }
       return URL.createObjectURL(await res.blob());
     },
-    [person]
+    [person.id, person.gender]
   );
 
   const playUrl = useCallback(async (url: string) => {
@@ -228,6 +198,8 @@ export default function CallDialog({
   );
 
   const listenRef = useRef<() => void>(() => {});
+  const speakRef = useRef(speak);
+  const respondRef = useRef<(text: string) => Promise<void>>(async () => {});
 
   const respond = useCallback(
     async (text: string) => {
@@ -260,47 +232,129 @@ export default function CallDialog({
     [person.id, speak]
   );
 
-  const listen = useCallback(() => {
+  // ─── الاستماع: نسجّل صوتك من الميكروفون، ونكشف بداية كلامك ونهايته، ثم نحوّله لنص من الخادم ───
+  const mic = useRef<MediaStream | null>(null);
+  const meter = useRef<{ ctx: AudioContext; an: AnalyserNode; buf: Float32Array<ArrayBuffer> } | null>(null);
+  const stopListen = useRef<(() => void) | null>(null);
+  const [level, setLevel] = useState(0);
+  const [micState, setMicState] = useState<"pending" | "ok" | "denied">("pending");
+
+  const ensureMic = useCallback(async () => {
+    if (mic.current && meter.current) {
+      await meter.current.ctx.resume().catch(() => {});
+      return true;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setMicState("denied");
+      setError("متصفحك لا يدعم تسجيل الصوت. استخدم Chrome أو Edge أو Safari حديث، أو اكتب رسالتك.");
+      return false;
+    }
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      mic.current = s;
+      const ctx = new AudioContext();
+      const an = ctx.createAnalyser();
+      an.fftSize = 1024;
+      ctx.createMediaStreamSource(s).connect(an);
+      await ctx.resume().catch(() => {});
+      meter.current = { ctx, an, buf: new Float32Array(an.fftSize) };
+      setMicState("ok");
+      return true;
+    } catch {
+      setMicState("denied");
+      setError("لم يُسمح باستخدام الميكروفون. اضغط على رمز القفل بجانب عنوان الموقع واسمح بالميكروفون، ثم أعد الاتصال.");
+      return false;
+    }
+  }, []);
+
+  const listen = useCallback(async () => {
     if (!active.current) return;
-    if (!Recognizer || mutedRef.current) {
+    if (mutedRef.current || !(await ensureMic())) {
       setPhase("idle");
       return;
     }
-    const r = new Recognizer();
-    r.lang = "ar-SA";
-    r.interimResults = true;
-    r.continuous = false;
-    let final = "";
-    r.onresult = (e) => {
-      let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const res = e.results[i];
-        if (res.isFinal) final += res[0].transcript;
-        else interim += res[0].transcript;
-      }
-      setHeard(final || interim);
+    if (!active.current || mutedRef.current || stopListen.current) return;
+    const m = meter.current!;
+    const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find((t) =>
+      MediaRecorder.isTypeSupported?.(t)
+    );
+    const rec = new MediaRecorder(mic.current!, mime ? { mimeType: mime } : undefined);
+    const chunks: Blob[] = [];
+    rec.ondataavailable = (e) => {
+      if (e.data.size) chunks.push(e.data);
     };
-    r.onerror = (e) => {
-      if (e.error === "not-allowed") setError("اسمح للمتصفح باستخدام الميكروفون ثم أعد الاتصال.");
-    };
-    r.onend = () => {
-      rec.current = null;
-      if (!active.current) return;
-      if (final.trim()) void respond(final);
-      else if (!mutedRef.current) setTimeout(() => listenRef.current(), 250);
-    };
-    rec.current = r;
+    rec.start(250); // نبدأ التسجيل فوراً حتى لا تضيع أول كلمة
     setPhase("listening");
-    try {
-      r.start();
-    } catch {
-      /* بدأ مسبقاً */
-    }
-  }, [Recognizer, respond]);
+
+    const startedAt = performance.now();
+    let noise = 0.008;
+    let speechAt = 0;
+    let lastVoice = 0;
+    let done = false;
+
+    const finish = (send: boolean) => {
+      if (done) return;
+      done = true;
+      clearInterval(timer);
+      stopListen.current = null;
+      setLevel(0);
+      rec.onstop = async () => {
+        if (!send || !active.current) return;
+        setPhase("thinking");
+        try {
+          const fd = new FormData();
+          fd.append("audio", new Blob(chunks, { type: rec.mimeType || mime || "audio/webm" }), "speech");
+          const res = await fetch("/api/stt", { method: "POST", body: fd });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "تعذّر فهم الصوت");
+          const text = String(data.text ?? "").trim();
+          if (!active.current) return;
+          if (text) void respondRef.current(text);
+          else listenRef.current();
+        } catch (e) {
+          setError((e as Error).message);
+          if (active.current) setTimeout(() => listenRef.current(), 1500);
+        }
+      };
+      if (rec.state !== "inactive") rec.stop();
+    };
+    stopListen.current = () => finish(false);
+
+    const timer = setInterval(() => {
+      m.an.getFloatTimeDomainData(m.buf);
+      let sum = 0;
+      for (const v of m.buf) sum += v * v;
+      const rms = Math.sqrt(sum / m.buf.length);
+      setLevel(Math.min(1, rms * 14));
+      const now = performance.now();
+      const threshold = Math.max(0.012, noise * 2.5);
+      if (!speechAt) {
+        if (rms >= threshold && now - startedAt > 250) {
+          speechAt = now;
+          lastVoice = now;
+          setError(null);
+        } else {
+          noise = noise * 0.95 + rms * 0.05; // نتعلم مستوى الضجيج في الغرفة
+          if (now - startedAt > 15000) {
+            // لا كلام: نعيد التسجيل من جديد حتى لا يكبر الملف
+            finish(false);
+            listenRef.current();
+          }
+        }
+        return;
+      }
+      if (rms >= threshold) lastVoice = now;
+      if (now - lastVoice > 1300 || now - speechAt > 25000) finish(now - speechAt > 300);
+    }, 60);
+  }, [ensureMic]);
 
   useEffect(() => {
-    listenRef.current = listen;
-  }, [listen]);
+    listenRef.current = () => void listen();
+    speakRef.current = speak;
+    respondRef.current = respond;
+  }, [listen, respond, speak]);
 
   // بداية المكالمة: الموظف يرد بالتحية
   useEffect(() => {
@@ -309,27 +363,32 @@ export default function CallDialog({
     const t = setTimeout(async () => {
       setLastReply(greet);
       setPhase("speaking");
-      await speak(greet);
+      await speakRef.current(greet);
       if (active.current) listenRef.current();
     }, 600);
     return () => {
       active.current = false;
       clearTimeout(t);
-      rec.current?.abort();
+      stopListen.current?.();
+      mic.current?.getTracks().forEach((t) => t.stop());
+      void meter.current?.ctx.close().catch(() => {});
+      mic.current = null;
+      meter.current = null;
       window.speechSynthesis?.cancel();
       audio.current?.pause();
       tapResolve.current?.();
     };
-  }, [person.name, speak]);
+    // التحية مرة واحدة فقط عند بداية المكالمة
+  }, [person.name]);
 
   function toggleMute() {
     const next = !muted;
     setMuted(next);
     mutedRef.current = next;
     if (next) {
-      rec.current?.abort();
+      stopListen.current?.();
       setPhase("idle");
-    } else if (phase === "idle") listen();
+    } else if (phase === "idle") void listen();
   }
 
   const face = useTalkingFace(phase === "speaking");
@@ -417,10 +476,14 @@ export default function CallDialog({
               <b>{person.name}:</b> {lastReply}
             </p>
           )}
-          {!Recognizer && (
-            <p className="text-amber-300">
-              متصفحك لا يدعم التحدث الصوتي. استخدم Chrome أو Edge، أو اكتب رسالتك هنا وسيرد عليك بصوته.
-            </p>
+          {phase === "listening" && (
+            <div className="flex items-center gap-2 text-xs opacity-80">
+              <span>🎙️ صوتك</span>
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full bg-emerald-400 transition-[width] duration-75" style={{ width: `${Math.round(level * 100)}%` }} />
+              </div>
+              <span>تكلّم ثم توقّف لحظة ليرد عليك</span>
+            </div>
           )}
           {needTap && (
             <button
@@ -432,7 +495,7 @@ export default function CallDialog({
           )}
           {voiceNote && <p className="text-xs text-amber-300">{voiceNote}</p>}
           {error && <p className="text-red-300">{error}</p>}
-          {(!Recognizer || muted) && (
+          {(micState === "denied" || muted) && (
             <form
               className="flex gap-2"
               onSubmit={(e) => {
