@@ -1,65 +1,123 @@
 "use client";
 
-import { useState } from "react";
-import { OFFICE_AGENTS, type AgentId } from "@/lib/agents";
+import { useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { OFFICE_AGENTS, WORKER_IDS } from "@/lib/agents";
 import type { TaskResult } from "@/lib/orchestrator";
+import { addMeeting, addTasks, teamPayload, useOffice, useStorageMode } from "@/lib/officeStore";
+import type { CameraView, Person } from "./components/Office3D";
+import AddEmployeeDialog from "./components/AddEmployeeDialog";
+import CallDialog from "./components/CallDialog";
+import EmployeePanel, { performance } from "./components/EmployeePanel";
+import MeetingsArchive from "./components/MeetingsArchive";
+import { card, input, postJSON } from "./components/ui";
+import Avatar from "./components/Avatar";
+import { MAX_EMPLOYEES, MEETING_SEATS, seatsFor, type OfficeMode } from "./components/office/floorplan";
 
 type Status = "idle" | "working" | "done";
 
-// مواقع المكاتب ومقاعد غرفة الاجتماعات (بالنسبة المئوية داخل أرضية المكتب)
-const DESKS: Record<AgentId, { x: number; y: number }> = {
-  musab: { x: 12, y: 22 },
-  kareem: { x: 12, y: 72 },
-  mona: { x: 40, y: 72 },
-  omar: { x: 40, y: 22 },
-};
-const MEETING_SEATS: Record<AgentId, { x: number; y: number }> = {
-  musab: { x: 70, y: 32 },
-  kareem: { x: 88, y: 32 },
-  mona: { x: 70, y: 66 },
-  omar: { x: 88, y: 66 },
-};
+// المشهد ثلاثي الأبعاد يعمل في المتصفح فقط
+const Office3D = dynamic(() => import("./components/Office3D"), {
+  ssr: false,
+  loading: () => <div className="grid h-full place-items-center text-sm opacity-60">جاري تحميل المكتب…</div>,
+});
 
 interface MeetingResult {
   topic: string;
   meetingUrl: string | null;
   meetingError: string | null;
+  teamsLinkEnabled?: boolean;
   minutes: string;
   teamsNotified: boolean;
 }
+interface PrivateResult {
+  employeeId: string;
+  name: string;
+  role: string;
+  topic: string;
+  reply: string;
+}
+
 
 export default function OfficePage() {
+  const office = useOffice();
+  const storage = useStorageMode();
+  const employees = office.employees;
   const [goal, setGoal] = useState("");
   const [topic, setTopic] = useState("");
-  const [statuses, setStatuses] = useState<Record<AgentId, Status>>({
-    musab: "idle", kareem: "idle", mona: "idle", omar: "idle",
-  });
-  const [inMeeting, setInMeeting] = useState(false);
-  const [busy, setBusy] = useState<"task" | "meeting" | null>(null);
+  const [privateTopic, setPrivateTopic] = useState("");
+  const [privateGuest, setPrivateGuest] = useState<string>("kareem");
+  const [statuses, setStatuses] = useState<Record<string, Status>>({});
+  const [mode, setMode] = useState<OfficeMode>({ kind: "desks" });
+  const [busy, setBusy] = useState<"task" | "meeting" | "private" | null>(null);
   const [result, setResult] = useState<(TaskResult & { teamsNotified: boolean }) | null>(null);
   const [meeting, setMeeting] = useState<MeetingResult | null>(null);
+  const [privateResult, setPrivateResult] = useState<PrivateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<CameraView>("overview");
+  const [viewNonce, setViewNonce] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [panelFor, setPanelFor] = useState<string | null>(null);
+  const [call, setCall] = useState<{ id: string; video: boolean } | null>(null);
+  const taskRef = useRef<HTMLTextAreaElement>(null);
+  const privateRef = useRef<HTMLInputElement>(null);
 
-  const setAll = (s: Status) => setStatuses({ musab: s, kareem: s, mona: s, omar: s });
+  // الفريق كاملاً: المدير أولاً، ثم الأساسيون، ثم الموظفون الجدد
+  const people: Person[] = useMemo(
+    () => [
+      ...(["musab", ...WORKER_IDS] as const).map((id) => {
+        const a = OFFICE_AGENTS[id];
+        return { id, name: a.name, role: a.role, color: a.color, gender: a.gender, manager: id === "musab" };
+      }),
+      ...employees.map((e) => ({ id: e.id, name: e.name, role: e.role, color: e.color, gender: e.gender })),
+    ],
+    [employees]
+  );
+  const byId = useMemo(() => Object.fromEntries(people.map((p) => [p.id, p])), [people]);
+  const ids = useMemo(() => people.map((p) => p.id), [people]);
+  const seats = useMemo(() => seatsFor(ids, mode), [ids, mode]);
+  const homeDesk = useMemo(() => Object.fromEntries(ids.slice(1).map((id, i) => [id, i])), [ids]);
+  const staff = people.slice(1);
+  const deskFull = employees.length >= MAX_EMPLOYEES - WORKER_IDS.length;
+
+  const goTo = (v: CameraView) => {
+    setView(v);
+    setViewNonce((n) => n + 1);
+    setSelected(v.startsWith("agent:") ? v.slice(6) : null);
+  };
+  const setAll = (s: Status, only?: string[]) =>
+    setStatuses(Object.fromEntries((only ?? ids).map((id) => [id, s])));
+
+  const setOne = (id: string, st: Status) => setStatuses((prev) => ({ ...prev, [id]: st }));
 
   async function dispatchTask() {
     if (!goal.trim()) return;
     setBusy("task");
     setError(null);
     setResult(null);
-    setInMeeting(false);
+    setMode({ kind: "desks" });
     setAll("working");
     try {
-      const res = await fetch("/api/dispatch-task", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal }),
+      const data = await postJSON<TaskResult & { teamsNotified: boolean }>("/api/dispatch-task", {
+        goal,
+        employees: teamPayload(),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
       setResult(data);
-      const next: Record<AgentId, Status> = { musab: "done", kareem: "idle", mona: "idle", omar: "idle" };
-      for (const d of data.deliverables as TaskResult["deliverables"]) next[d.agentId] = "done";
+      // تُسجَّل كل مهمة في ملف الموظف
+      addTasks(
+        data.deliverables.map((d) => ({
+          employeeId: d.agentId,
+          title: d.subtask,
+          goal: data.goal,
+          source: "manager" as const,
+          status: "done" as const,
+          result: d.deliverable,
+          doneAt: new Date().toISOString(),
+        }))
+      );
+      const next: Record<string, Status> = { musab: "done" };
+      for (const d of data.deliverables) next[d.agentId] = "done";
       setStatuses(next);
     } catch (e) {
       setError((e as Error).message);
@@ -73,18 +131,21 @@ export default function OfficePage() {
     setBusy("meeting");
     setError(null);
     setMeeting(null);
-    setInMeeting(true); // الشخصيات تتحرك إلى غرفة الاجتماعات
-    setAll("working");
+    setMode({ kind: "team" }); // الفريق يمشي إلى غرفة الاجتماعات الكبيرة
+    goTo("meeting");
+    const attendees = ids.slice(0, MEETING_SEATS.length);
+    setAll("working", attendees);
     try {
-      const res = await fetch("/api/team-meeting", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = await postJSON<MeetingResult>("/api/team-meeting", { topic, employees: teamPayload() });
       setMeeting(data);
-      setAll("done");
+      addMeeting({
+        kind: "team",
+        topic: data.topic,
+        participants: attendees.map((id) => byId[id]?.name ?? id),
+        minutes: data.minutes,
+        teamsUrl: data.meetingUrl,
+      });
+      setAll("done", attendees);
     } catch (e) {
       setError((e as Error).message);
       setAll("idle");
@@ -93,52 +154,158 @@ export default function OfficePage() {
     }
   }
 
+  async function callPrivateMeeting() {
+    if (!privateTopic.trim()) {
+      privateRef.current?.focus();
+      return;
+    }
+    const guest = privateGuest;
+    setBusy("private");
+    setError(null);
+    setPrivateResult(null);
+    setMode({ kind: "private", guestId: guest }); // مصعب والموظف يذهبان للغرفة الخاصة
+    goTo("private");
+    setAll("working", ["musab", guest]);
+    try {
+      const data = await postJSON<PrivateResult>("/api/private-meeting", {
+        employeeId: guest,
+        topic: privateTopic,
+        employees: teamPayload(),
+      });
+      setPrivateResult(data);
+      addMeeting({
+        kind: "private",
+        topic: data.topic,
+        participants: [OFFICE_AGENTS.musab.name, data.name],
+        minutes: data.reply,
+      });
+      setAll("done", ["musab", guest]);
+    } catch (e) {
+      setError((e as Error).message);
+      setAll("idle");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function backToDesks() {
+    setMode({ kind: "desks" });
+    goTo("overview");
+  }
+
+  const sel = selected ? byId[selected] : null;
+  const panelPerson = panelFor ? byId[panelFor] : null;
+  const callPerson = call ? byId[call.id] : null;
+
+  // الضغط على موظف: تقريب الكاميرا وفتح ملفه
+  function openPerson(id: string) {
+    goTo(`agent:${id}`);
+    if (id !== "musab") setPanelFor(id);
+  }
+
   return (
-    <main className="mx-auto w-full max-w-6xl p-4 md:p-8 space-y-6">
-      <header>
-        <h1 className="text-2xl md:text-3xl font-bold">🏢 المكتب الافتراضي</h1>
-        <p className="text-sm opacity-70">مصعب يوزّع المهام على الفريق ويرسل التقرير إلى Microsoft Teams</p>
+    <main className="mx-auto w-full max-w-7xl p-4 md:p-6 space-y-4">
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold">🏢 المكتب الافتراضي</h1>
+          <p className="text-sm opacity-70">مصعب يوزّع المهام على الفريق ويرسل التقرير إلى Microsoft Teams</p>
+        </div>
+        <span className="rounded-full bg-black/5 dark:bg-white/10 px-3 py-1 text-xs" title="مكان حفظ بيانات المكتب">
+          {storage === "cloud"
+            ? "☁️ محفوظ في قاعدة البيانات"
+            : storage === "error"
+              ? "⚠️ تعذّر الحفظ في قاعدة البيانات (محفوظ محلياً)"
+              : storage === "local"
+                ? "💾 محفوظ في هذا المتصفح"
+                : "…"}
+        </span>
       </header>
 
-      {/* أرضية المكتب */}
-      <section className="relative h-80 rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 overflow-hidden">
-        <div className="absolute left-[60%] top-[8%] h-[84%] w-[38%] rounded-xl border-2 border-dashed border-sky-400/60 bg-sky-400/5">
-          <span className="absolute top-2 right-3 text-xs text-sky-600 dark:text-sky-300">غرفة الاجتماعات</span>
-          <div className="absolute inset-x-[25%] inset-y-[38%] rounded-full bg-sky-200/50 dark:bg-sky-800/40" />
-        </div>
-        {(Object.keys(OFFICE_AGENTS) as AgentId[]).map((id) => {
-          const a = OFFICE_AGENTS[id];
-          const pos = inMeeting ? MEETING_SEATS[id] : DESKS[id];
-          return (
-            <div
-              key={id}
-              className="absolute -translate-x-1/2 -translate-y-1/2 transition-all duration-1000 ease-in-out text-center"
-              style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
-            >
-              <div
-                className={`mx-auto grid h-14 w-14 place-items-center rounded-full text-2xl shadow-md ${statuses[id] === "working" ? "working" : ""}`}
-                style={{ background: a.color + "22", border: `2px solid ${a.color}` }}
-              >
-                {a.emoji}
-              </div>
-              <div className="mt-1 text-sm font-semibold">{a.name}</div>
-              <div className="text-[11px] opacity-60">{a.role}</div>
-              <div className="text-[11px]">
-                {statuses[id] === "working" ? "⏳ يعمل" : statuses[id] === "done" ? "✅ أنجز" : ""}
+      {/* شريط الأدوات */}
+      <nav className="office-toolbar">
+        <button className="tb tb-primary" onClick={() => taskRef.current?.focus()}>📋 مهمة جديدة</button>
+        <button className="tb tb-violet" onClick={callTeamMeeting} disabled={!!busy}>
+          🎥 {busy === "meeting" ? "جاري الاجتماع…" : "اجتماع الفريق"}
+        </button>
+        <button className="tb tb-teal" onClick={() => privateRef.current?.focus()} disabled={!!busy}>
+          🔒 اجتماع خاص
+        </button>
+        <button className="tb tb-green" onClick={() => setShowAdd(true)} disabled={deskFull}>
+          ➕ موظف جديد
+        </button>
+        <button className="tb" onClick={backToDesks} disabled={mode.kind === "desks"}>
+          🪑 العودة للمكاتب
+        </button>
+        <span className="tb-sep" />
+        {(
+          [
+            ["overview", "🏢 منظر عام"],
+            ["manager", "🏛️ مكتب المدير"],
+            ["meeting", "👥 الاجتماعات"],
+            ["private", "🔒 الغرفة الخاصة"],
+          ] as const
+        ).map(([v, label]) => (
+          <button key={v} className={`tb ${view === v ? "tb-active" : ""}`} onClick={() => goTo(v)}>
+            {label}
+          </button>
+        ))}
+        <span className="tb-sep" />
+        {people.map((p) => (
+          <button
+            key={p.id}
+            className={`tb ${view === `agent:${p.id}` ? "tb-active" : ""}`}
+            style={{ ["--c" as string]: p.color }}
+            onClick={() => openPerson(p.id)}
+          >
+            <span className="tb-dot" /> {p.name}
+            {statuses[p.id] === "working" ? " ⏳" : statuses[p.id] === "done" ? " ✅" : ""}
+          </button>
+        ))}
+      </nav>
+
+      {/* المكتب ثلاثي الأبعاد */}
+      <section className="relative h-[66vh] min-h-[440px] overflow-hidden rounded-2xl border border-black/10 dark:border-white/10 shadow-sm">
+        <Office3D
+          people={people}
+          seats={seats}
+          homeDesk={homeDesk}
+          statuses={statuses}
+          view={view}
+          viewNonce={viewNonce}
+          selected={selected}
+          onSelect={openPerson}
+          onEmptyDesk={() => !deskFull && setShowAdd(true)}
+        />
+        {sel && (
+          <div className="absolute bottom-3 right-3 w-64 rounded-xl bg-white/95 dark:bg-zinc-900/95 p-3 text-sm shadow-lg backdrop-blur space-y-2">
+            <div>
+              <div className="font-bold">{sel.name}</div>
+              <div className="opacity-70">{sel.role}</div>
+              <div className="mt-1 text-xs">
+                {statuses[sel.id] === "working" ? "⏳ يعمل الآن" : statuses[sel.id] === "done" ? "✅ أنجز مهمته" : "متاح"}
               </div>
             </div>
-          );
-        })}
+            {!sel.manager && (
+              <button className="tb tb-primary" onClick={() => setPanelFor(sel.id)}>
+                📂 ملف الموظف
+              </button>
+            )}
+          </div>
+        )}
+        <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-black/40 px-2 py-1 text-[11px] text-white">
+          اسحب للتدوير • عجلة الفأرة للتكبير • اضغط على موظف أو مكتب شاغر
+        </div>
       </section>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <section className="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 p-4 space-y-3">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <section className={`${card} space-y-3`}>
           <h2 className="font-bold">📋 مهمة جديدة لمصعب</h2>
           <textarea
+            ref={taskRef}
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
             placeholder="مثال: جهّز خطة إعلانية لإطلاق دورة تدريبية أونلاين خلال أسبوعين"
-            className="w-full min-h-24 rounded-lg border border-black/15 dark:border-white/15 bg-transparent p-3"
+            className={`${input} min-h-24`}
           />
           <button
             onClick={dispatchTask}
@@ -149,13 +316,13 @@ export default function OfficePage() {
           </button>
         </section>
 
-        <section className="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 p-4 space-y-3">
-          <h2 className="font-bold">🎥 اجتماع الفريق على Teams</h2>
+        <section className={`${card} space-y-3`}>
+          <h2 className="font-bold">🎥 اجتماع الفريق (الغرفة الكبيرة + Teams)</h2>
           <input
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
             placeholder="موضوع الاجتماع (اختياري)"
-            className="w-full rounded-lg border border-black/15 dark:border-white/15 bg-transparent p-3"
+            className={input}
           />
           <button
             onClick={callTeamMeeting}
@@ -164,13 +331,96 @@ export default function OfficePage() {
           >
             {busy === "meeting" ? "جاري تجهيز الاجتماع…" : "Call Team Meeting"}
           </button>
+          {people.length > MEETING_SEATS.length && (
+            <p className="text-xs opacity-60">تتسع الغرفة لـ {MEETING_SEATS.length} أشخاص، والبقية يتابعون من مكاتبهم.</p>
+          )}
+        </section>
+
+        <section className={`${card} space-y-3`}>
+          <h2 className="font-bold">🔒 اجتماع خاص مع موظف</h2>
+          <select
+            value={privateGuest}
+            onChange={(e) => setPrivateGuest(e.target.value)}
+            className={input}
+          >
+            {staff.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} — {p.role}
+              </option>
+            ))}
+          </select>
+          <input
+            ref={privateRef}
+            value={privateTopic}
+            onChange={(e) => setPrivateTopic(e.target.value)}
+            placeholder="موضوع الاجتماع الخاص (مثال: تقييم أداء الحملة)"
+            className={input}
+          />
+          <button
+            onClick={callPrivateMeeting}
+            disabled={!!busy || !privateTopic.trim()}
+            className="w-full rounded-lg bg-teal-600 px-4 py-2 font-semibold text-white disabled:opacity-50"
+          >
+            {busy === "private" ? "الاجتماع جارٍ…" : "بدء الاجتماع الخاص"}
+          </button>
         </section>
       </div>
+
+      {/* الفريق */}
+      <section className={`${card} space-y-3`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-bold">👥 فريق المكتب ({people.length})</h2>
+          <button className="tb tb-green" onClick={() => setShowAdd(true)} disabled={deskFull}>
+            ➕ إضافة موظف
+          </button>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {staff.map((p) => {
+            const perf = performance(office.tasks.filter((t) => t.employeeId === p.id));
+            return (
+              <button
+                key={p.id}
+                onClick={() => openPerson(p.id)}
+                className="flex items-center gap-3 rounded-xl border border-black/10 dark:border-white/10 px-3 py-2 text-start text-sm hover:bg-black/[.03] dark:hover:bg-white/5"
+                style={{ borderInlineStartWidth: 4, borderInlineStartColor: p.color }}
+              >
+                <Avatar person={p} size={42} />
+                <div className="flex-1">
+                  <div className="font-semibold">
+                    {p.name} <span className="text-xs font-normal opacity-60">• {perf.level}</span>
+                  </div>
+                  <div className="text-xs opacity-60">{p.role}</div>
+                  <div className="mt-0.5 text-xs">
+                    ✅ {perf.done} منجزة • 🕒 {perf.pending} لم تُنجز
+                    {perf.avg ? ` • ⭐ ${perf.avg.toFixed(1)}` : ""}
+                  </div>
+                </div>
+                {statuses[p.id] === "working" && <span>⏳</span>}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs opacity-60">
+          اضغط على أي موظف لفتح ملفه: مهامه المنجزة والمعلّقة، المحادثة، الاتصال، والتطوير. المكاتب الشاغرة: {MAX_EMPLOYEES - staff.length}
+        </p>
+      </section>
 
       {error && (
         <div className="rounded-lg border border-red-400 bg-red-50 dark:bg-red-950/40 p-3 text-sm text-red-700 dark:text-red-300">
           {error}
         </div>
+      )}
+
+      {privateResult && (
+        <section className="rounded-2xl border border-teal-300 dark:border-teal-800 bg-white dark:bg-zinc-900 p-4 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-bold">
+              🔒 اجتماع خاص: مصعب و{privateResult.name} — {privateResult.topic}
+            </h2>
+            <button className="tb" onClick={backToDesks}>🪑 إنهاء الاجتماع</button>
+          </div>
+          <pre className="whitespace-pre-wrap text-sm leading-7 font-sans">{privateResult.reply}</pre>
+        </section>
       )}
 
       {meeting && (
@@ -194,9 +444,13 @@ export default function OfficePage() {
               نسخ المحضر
             </button>
           </div>
-          {meeting.meetingError && <p className="text-sm text-amber-600">⚠️ {meeting.meetingError}</p>}
+          {meeting.meetingError && (
+            <p className="text-sm text-amber-600">⚠️ لم يُنشأ رابط Teams: {meeting.meetingError}</p>
+          )}
           <p className="text-xs opacity-60">
-            {meeting.teamsNotified ? "✅ أُرسل الرابط والمحضر إلى قناة Teams" : "لم يُرسل إلى Teams (تحقق من TEAMS_WEBHOOK_URL)"}
+            {meeting.teamsLinkEnabled === false && "تم الاجتماع داخل المكتب الافتراضي (رابط Teams اختياري). "}
+            {meeting.teamsNotified ? "✅ أُرسل المحضر إلى قناة Teams" : ""}
+            {" "}حُفظ المحضر في أرشيف الاجتماعات.
           </p>
           <pre className="whitespace-pre-wrap text-sm leading-7 font-sans">{meeting.minutes}</pre>
         </section>
@@ -208,18 +462,38 @@ export default function OfficePage() {
             <h2 className="font-bold mb-2">🧑‍💼 ملخص مصعب</h2>
             <pre className="whitespace-pre-wrap text-sm leading-7 font-sans">{result.managerSummary}</pre>
             <p className="mt-2 text-xs opacity-60">
-              {result.teamsNotified ? "✅ أُرسل التقرير إلى Teams" : "لم يُرسل إلى Teams (تحقق من TEAMS_WEBHOOK_URL)"}
+              {result.teamsNotified ? "✅ أُرسل التقرير إلى Teams. " : ""}سُجّلت المهام في ملف كل موظف.
             </p>
           </div>
           {result.deliverables.map((d) => (
-            <details key={d.agentId} className="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-zinc-900 p-4" open>
+            <details key={d.agentId} className={card} open>
               <summary className="cursor-pointer font-semibold">
-                {OFFICE_AGENTS[d.agentId].emoji} {d.agentName} ({d.role}) — {d.subtask}
+                <span className="tb-dot" style={{ ["--c" as string]: byId[d.agentId]?.color }} /> {d.agentName} ({d.role}) — {d.subtask}
               </summary>
               <pre className="mt-3 whitespace-pre-wrap text-sm leading-7 font-sans">{d.deliverable}</pre>
             </details>
           ))}
         </section>
+      )}
+
+      <MeetingsArchive />
+
+      {showAdd && <AddEmployeeDialog onClose={() => setShowAdd(false)} />}
+      {panelPerson && !callPerson && (
+        <EmployeePanel
+          person={panelPerson}
+          onClose={() => setPanelFor(null)}
+          onBusy={setOne}
+          onCall={(video) => setCall({ id: panelPerson.id, video })}
+          onPrivateMeeting={() => {
+            setPrivateGuest(panelPerson.id);
+            setPanelFor(null);
+            setTimeout(() => privateRef.current?.focus(), 50);
+          }}
+        />
+      )}
+      {callPerson && call && (
+        <CallDialog person={callPerson} withVideo={call.video} onClose={() => setCall(null)} />
       )}
     </main>
   );

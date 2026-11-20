@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { runTask } from "@/lib/orchestrator";
+import { parseTeamInput, buildRoster } from "@/lib/agents";
 import { notifyTeamsOnCompletion } from "@/lib/teamsNotifier";
 
 export const maxDuration = 300;
 
 export async function POST(req: Request) {
   let goal: string | undefined;
+  let employees: unknown;
   try {
-    ({ goal } = await req.json());
+    ({ goal, employees } = await req.json());
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -16,7 +18,8 @@ export async function POST(req: Request) {
   if (goal.length > 2000) return NextResponse.json({ error: "الهدف طويل جداً" }, { status: 400 });
 
   try {
-    const result = await runTask(goal);
+    const roster = buildRoster(parseTeamInput(employees));
+    const result = await runTask(goal, roster);
     const teamsNotified = await notifyTeamsOnCompletion(
       result.goal,
       result.managerSummary,
