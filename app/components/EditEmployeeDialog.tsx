@@ -10,7 +10,7 @@ import Avatar from "./Avatar";
 import { card, input } from "./ui";
 
 /** تصغير الصورة وقصها مربعاً من المنتصف (256 بكسل) حتى تبقى خفيفة في التخزين */
-async function shrinkPhoto(file: File, size = 256): Promise<string> {
+export async function shrinkPhoto(file: File, size = 256): Promise<string> {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {

@@ -62,6 +62,19 @@ export interface ProfileEdit {
   voice?: string; // صوت المكالمات (اختياري، وإلا يبقى الصوت الثابت الحالي)
 }
 
+/** إعدادات المكتب: الهوية والألوان وطريقة العرض */
+export interface OfficeSettings {
+  name?: string; // اسم المكتب
+  org?: string; // الجهة
+  purpose?: string; // وظيفة المكتب (وصف قصير يظهر تحت الاسم)
+  logo?: string; // شعار (data URL مصغّر)
+  bg?: string; // لون الخلفية
+  fg?: string; // لون النص
+  cardBg?: string; // لون البطاقات
+  accent?: string; // اللون الرئيسي للأزرار
+  scale?: "auto" | "normal" | "large" | "xlarge"; // حجم العرض (للتلفاز)
+}
+
 export interface OfficeState {
   version: 2;
   updatedAt: string;
@@ -74,6 +87,7 @@ export interface OfficeState {
   departments: Department[];
   profiles: Record<string, ProfileEdit>;
   orgVersion?: number; // نسخة الهيكل الأساسي المزروع
+  settings?: OfficeSettings;
 }
 
 export const emptyState = (): OfficeState => ({
@@ -126,6 +140,7 @@ export function normalizeState(raw: unknown): OfficeState {
     departments: Array.isArray(r.departments) ? r.departments : [],
     profiles: r.profiles && typeof r.profiles === "object" ? r.profiles : {},
     orgVersion: typeof r.orgVersion === "number" ? r.orgVersion : 0,
+    settings: r.settings && typeof r.settings === "object" ? r.settings : {},
   };
 }
 
