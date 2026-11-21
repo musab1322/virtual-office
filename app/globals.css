@@ -224,3 +224,8 @@ html[data-scale="xlarge"] { font-size: 26px !important; }
 @media (min-width: 1024px) {
   .page-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 }
+
+/* اللمس: اللافتات لا تعترض حركة الإصبعين على المشهد (المس الشخصية نفسها لفتح ملفه) */
+@media (pointer: coarse) {
+  .agent-tag-wrap { pointer-events: none !important; }
+}

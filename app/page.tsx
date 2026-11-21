@@ -455,8 +455,8 @@ export default function OfficePage() {
                 </div>
               )}
               <div className={`pointer-events-none absolute bottom-3 left-3 rounded-lg bg-black/40 px-2 py-1 text-[0.6875rem] text-white ${sel ? "hidden sm:block" : ""}`}>
-                <span className="hint-mouse">اسحب للتدوير • عجلة الفأرة للتكبير • اضغط على موظف أو مكتب شاغر</span>
-                <span className="hint-touch">اسحب بإصبع للتدوير • قرّب بإصبعين • المس موظفاً أو مكتباً شاغراً</span>
+                <span className="hint-mouse">اسحب لتحريك الصورة • الزر الأيمن للتدوير • العجلة للتقريب • اضغط على موظف</span>
+                <span className="hint-touch">إصبع: تحريك الصورة • إصبعان: تقريب وإبعاد وتدوير • المس موظفاً</span>
               </div>
             </section>
             <div className="space-y-4">

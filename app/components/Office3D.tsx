@@ -59,31 +59,62 @@ function CameraRig({
   // الشاشات الطولية (الجوال) والضيقة: نبعد الكاميرا حتى يظهر المكتب كاملاً
   const aspect = size.width / Math.max(1, size.height);
   const fit = Math.min(2.3, Math.max(1, 1.5 / aspect));
+  const fitRef = useRef(fit);
+  useEffect(() => {
+    fitRef.current = fit;
+  }, [fit]);
   const agentSeat = view.startsWith("agent:") ? seats[view.slice(6)] : undefined;
-  const goal = useMemo(() => {
-    if (view.startsWith("agent:")) {
-      const [x, , z] = agentSeat?.pos ?? [0, 0, 0];
-      const f = Math.min(fit, 1.6);
-      return { pos: new THREE.Vector3(x + 2.8 * f, 0.9 + 2.7 * f, z + 4.8 * f), target: new THREE.Vector3(x, 0.9, z) };
-    }
-    const p = CAMERA_PRESETS[view as RoomView];
-    const target = new THREE.Vector3(...p.target);
-    const pos = new THREE.Vector3(...p.pos).sub(target).multiplyScalar(fit).add(target);
-    return { pos, target };
-  }, [view, agentSeat, fit]);
+  // نحرك الكاميرا فقط عند اختيار منظر جديد أو انتقال الموظف لمقعد آخر،
+  // لا عند تحديث بيانات المكتب أو تغيّر مقاس الشاشة (حتى لا ترجع الصورة بعد تحريكك لها)
+  const seatKey = agentSeat ? agentSeat.pos.map((v) => v.toFixed(2)).join(",") : "";
+  const goal = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
 
   useEffect(() => {
+    const f0 = fitRef.current;
+    if (view.startsWith("agent:")) {
+      const [x, , z] = seatKey ? seatKey.split(",").map(Number) : [0, 0, 0];
+      const f = Math.min(f0, 1.6);
+      goal.current = { pos: new THREE.Vector3(x + 2.8 * f, 0.9 + 2.7 * f, z + 4.8 * f), target: new THREE.Vector3(x, 0.9, z) };
+    } else {
+      const p = CAMERA_PRESETS[view as RoomView];
+      const target = new THREE.Vector3(...p.target);
+      const pos = new THREE.Vector3(...p.pos).sub(target).multiplyScalar(f0).add(target);
+      goal.current = { pos, target };
+    }
     animating.current = true;
-  }, [goal, nonce]);
+  }, [view, nonce, seatKey]);
+
+  // بمجرد أن تلمس الشاشة أو تسحب بالفأرة نوقف الحركة التلقائية فوراً
+  useEffect(() => {
+    const c = controls as unknown as OrbitControlsImpl | undefined;
+    if (!c) return;
+    const stop = () => (animating.current = false);
+    c.addEventListener("start", stop);
+    return () => c.removeEventListener("start", stop);
+  }, [controls]);
 
   useFrame((_, dt) => {
     const c = controls as unknown as OrbitControlsImpl | undefined;
-    if (!animating.current || !c) return;
-    const k = 1 - Math.pow(0.02, Math.min(dt, 0.05));
-    camera.position.lerp(goal.pos, k);
-    c.target.lerp(goal.target, k);
-    c.update();
-    if (camera.position.distanceTo(goal.pos) < 0.02) animating.current = false;
+    const g = goal.current;
+    if (!c || !g) return;
+    if (animating.current) {
+      const k = 1 - Math.pow(0.02, Math.min(dt, 0.05));
+      camera.position.lerp(g.pos, k);
+      c.target.lerp(g.target, k);
+      c.update();
+      if (camera.position.distanceTo(g.pos) < 0.02) animating.current = false;
+      return;
+    }
+    // حدود المكتب: لا يضيع المشهد عند السحب بعيداً
+    const t = c.target;
+    const cx = THREE.MathUtils.clamp(t.x, -15, 15);
+    const cz = THREE.MathUtils.clamp(t.z, -10, 10);
+    const cy = THREE.MathUtils.clamp(t.y, 0, 3);
+    if (cx !== t.x || cz !== t.z || cy !== t.y) {
+      const d = new THREE.Vector3(cx - t.x, cy - t.y, cz - t.z);
+      t.add(d);
+      camera.position.add(d);
+    }
   });
   return null;
 }
@@ -372,10 +403,19 @@ export default function Office3D({
         <OrbitControls
           makeDefault
           enableDamping
+          dampingFactor={0.12}
+          rotateSpeed={0.55}
+          zoomSpeed={0.9}
+          panSpeed={0.9}
+          screenSpacePanning={false}
+          zoomToCursor
           maxPolarAngle={Math.PI / 2.25}
-          minDistance={3}
-          maxDistance={40}
-          target={CAMERA_PRESETS.overview.target}
+          minDistance={2.5}
+          maxDistance={45}
+          // اللمس: إصبع واحد يحرك الصورة (فوق/تحت/يمين/يسار)، وإصبعان للتقريب والإبعاد والتدوير
+          touches={{ ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE }}
+          // الفأرة: الزر الأيسر يحرك الصورة، الأيمن يدوّر، والعجلة تقرّب وتبعد
+          mouseButtons={{ LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }}
         />
         <CameraRig view={view} nonce={viewNonce} seats={seats} />
       </Canvas>
