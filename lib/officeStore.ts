@@ -14,6 +14,7 @@ import {
   type ProfileEdit,
   type LearningEntry,
   type MeetingRecord,
+  type OfficeSettings,
   type OfficeState,
   type OfficeTask,
 } from "@/lib/officeState";
@@ -130,6 +131,16 @@ export function useStorageMode(): StorageMode {
 
 export function getOffice() {
   return state;
+}
+
+export function setSettings(patch: OfficeSettings | null) {
+  update((s) => ({ ...s, settings: patch ? { ...(s.settings ?? {}), ...patch } : {} }));
+}
+
+/** استبدال كامل لبيانات المكتب (استعادة نسخة احتياطية) */
+export function replaceState(raw: unknown) {
+  const next = normalizeState(raw);
+  update(() => next);
 }
 
 export function update(fn: (s: OfficeState) => OfficeState) {

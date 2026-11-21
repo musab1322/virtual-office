@@ -23,7 +23,12 @@ export async function POST(req: Request) {
 
   try {
     if (action === "chat") {
-      const call = body.mode === "call";
+      const groupMode = body.mode === "group";
+      const call = body.mode === "call" || groupMode;
+      const groupNote = groupMode
+        ? `\nأنت الآن في «المجلس الصوتي»: مكالمة جماعية يسمع فيها الفريق كله الأستاذ مصعب ويتحاورون معاً. الحاضرون: ${str(body.participants, 600)}.
+تكلّم باسمك أنت فقط ومن زاوية تخصصك، ولا تكتب اسمك في بداية الرد، ولا تتكلم نيابة عن زملائك. يمكنك البناء على كلام زميلك أو الإضافة عليه باختصار. الرسائل التي تبدأ بـ«(فلان قال)» كلام زملائك، والباقي كلام الأستاذ مصعب.`
+        : "";
       const history: ChatMessage[] = (Array.isArray(body.messages) ? body.messages : [])
         .slice(-20)
         .map((m) => {
@@ -41,7 +46,7 @@ export async function POST(req: Request) {
         [
           {
             role: "system",
-            content: `${member.systemPrompt}\n${speakingStyle(member.id, member.style)}\nأنت تتحدث الآن مباشرة مع الأستاذ مصعب (مدير إدارة الاتصال والتسويق). ${
+            content: `${member.systemPrompt}\n${speakingStyle(member.id, member.style)}\nأنت تتحدث الآن مباشرة مع الأستاذ مصعب (مدير إدارة الاتصال والتسويق).${groupNote} ${
               call
                 ? "هذه مكالمة صوتية سريعة مثل النقاش: رد بجملة أو جملتين قصيرتين فقط (أقل من 35 كلمة)، بلهجة سعودية طبيعية، بدون رموز أو قوائم أو أرقام نقاط. إذا كان الكلام غير واضح اطلب التوضيح بجملة واحدة."
                 : "أجب بإيجاز ووضوح."

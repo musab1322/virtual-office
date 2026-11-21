@@ -215,7 +215,7 @@ function ChatTab({ person }: { person: Person }) {
           <div key={i} className={`flex ${m.role === "user" ? "justify-start" : "justify-end"}`}>
             <div
               className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm leading-7 ${
-                m.role === "user" ? "bg-blue-600 text-white" : "bg-white dark:bg-zinc-800 shadow-sm"
+                m.role === "user" ? "bg-[var(--accent)] text-white" : "bg-white dark:bg-zinc-800 shadow-sm"
               }`}
             >
               {m.via === "call" && <span className="me-1 opacity-60">📞</span>}
@@ -428,7 +428,7 @@ export default function EmployeePanel({
   return (
     <div className="fixed inset-0 z-[1900] flex justify-start bg-black/30" onClick={onClose}>
       <aside
-        className="h-full w-full max-w-xl min-[1800px]:max-w-3xl space-y-4 overflow-auto bg-white dark:bg-zinc-900 p-3 sm:p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl"
+        className="h-full w-full max-w-xl min-[1800px]:max-w-3xl space-y-4 overflow-auto bg-[var(--card)] p-3 sm:p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex flex-wrap items-center gap-3">

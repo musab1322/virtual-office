@@ -24,6 +24,36 @@ function pickVoice(gender: "m" | "f") {
 
 type Phase = "idle" | "listening" | "thinking" | "speaking";
 
+// ─── المجلس الصوتي: من يرد؟ ───────────────────────────────────────
+const norm = (s: string) =>
+  s
+    .replace(/[\u064B-\u0652\u0640]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .toLowerCase();
+
+/** الأشخاص الذين ذُكرت أسماؤهم في الكلام (بترتيب ذكرهم) */
+function mentioned(text: string, people: Person[]) {
+  const padded = ` ${norm(text).split(/[\s،,.؟?!:؛]+/).filter(Boolean).join(" ")} `;
+  const hits: { p: Person; at: number }[] = [];
+  for (const p of people) {
+    const n = norm(p.name.trim());
+    if (!n) continue;
+    let at = -1;
+    for (const pre of ["", "يا", "ل", "و", "ب", "ف"]) {
+      const i = padded.indexOf(` ${pre}${n} `);
+      if (i >= 0 && (at < 0 || i < at)) at = i;
+    }
+    if (at >= 0) hits.push({ p, at });
+  }
+  return hits.sort((a, b) => a.at - b.at).map((h) => h.p);
+}
+const TRANSFER = /(حول|وصل|اعطني|عطني|اكلم|ناد|خلني مع|كلمني)/;
+const EVERYONE = /(الكل|كلكم|جميعكم|يا شباب|يا جماعه|يا فريق|يا اخوان|رايكم|ارائكم|تقترحون|تشوفون)/;
+
+type GroupLine = { id: string; name: string; text: string };
+
 /** حركة الوجه: فتح الفم أثناء الكلام، ورمش طبيعي، وحركة رأس خفيفة */
 function useTalkingFace(speaking: boolean) {
   const [face, setFace] = useState({ mouth: 0, blink: false, bob: 0, tilt: 0 });
@@ -57,17 +87,30 @@ function useTalkingFace(speaking: boolean) {
 }
 
 export default function CallDialog({
-  person,
+  person: first,
   withVideo,
   onClose,
+  group,
 }: {
   person: Person;
   withVideo: boolean;
   onClose: () => void;
+  /** المجلس الصوتي: كل الفريق يسمع، ويرد من يُنادى باسمه */
+  group?: Person[];
 }) {
+  // المتحدث الحالي (في المكالمة الفردية هو الموظف نفسه دائماً)
+  const [person, setPerson] = useState(first);
+  const speakerRef = useRef(first);
+  const setSpeaker = useCallback((p: Person) => {
+    speakerRef.current = p;
+    setPerson(p);
+  }, []);
+  const isGroup = !!group;
+  const groupLog = useRef<GroupLine[]>([]);
+  const rotate = useRef(0);
   const [phase, setPhase] = useState<Phase>("idle");
   const [muted, setMuted] = useState(false);
-  const [camOn, setCamOn] = useState(withVideo);
+  const [camOn, setCamOn] = useState(withVideo && !group);
   const [heard, setHeard] = useState("");
   const [lastReply, setLastReply] = useState("");
   const [typed, setTyped] = useState("");
@@ -112,7 +155,7 @@ export default function CallDialog({
       const res = await fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voice: voiceFor({ id: person.id, gender: person.gender, voice: person.voice }) }),
+        body: JSON.stringify({ text, voice: voiceFor(speakerRef.current) }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -120,7 +163,7 @@ export default function CallDialog({
       }
       return URL.createObjectURL(await res.blob());
     },
-    [person.id, person.gender, person.voice]
+    []
   );
 
   const playUrl = useCallback(async (url: string) => {
@@ -156,7 +199,7 @@ export default function CallDialog({
           setTimeout(r, 1200);
         });
       }
-      const v = pickVoice(person.gender);
+      const v = pickVoice(speakerRef.current.gender);
       if (!v) setVoiceNote("لا يوجد صوت عربي مثبت في جهازك، لذلك قد لا تسمع الرد. أضف اللغة العربية لنظام التشغيل أو استخدم Edge.");
       for (const chunk of splitForSpeech(text)) {
         if (!active.current) return;
@@ -171,7 +214,7 @@ export default function CallDialog({
         });
       }
     },
-    [person.gender]
+    []
   );
 
   // صوت ثابت: بعد أن ينجح الصوت السعودي مرة، لا نبدّله أبداً بصوت المتصفح خلال المكالمة
@@ -220,11 +263,90 @@ export default function CallDialog({
   const speakRef = useRef(speak);
   const respondRef = useRef<(text: string) => Promise<void>>(async () => {});
 
+  /** المجلس: رد موظف واحد يرى كل ما قيل في المجلس */
+  const groupReply = useCallback(
+    async (who: Person) => {
+      const names = (group ?? []).map((p) => p.name).join("، ");
+      const messages = groupLog.current.slice(-24).map((l) =>
+        l.id === who.id
+          ? { role: "assistant" as const, content: l.text }
+          : { role: "user" as const, content: l.id === "user" ? l.text : `(${l.name} قال): ${l.text}` }
+      );
+      const { reply } = await postJSON<{ reply: string }>("/api/employee", {
+        action: "chat",
+        mode: "group",
+        participants: names,
+        employeeId: who.id,
+        employees: teamPayload(),
+        messages,
+      });
+      return reply;
+    },
+    [group]
+  );
+
+  const say = useCallback(
+    async (who: Person, text: string, save = true) => {
+      if (!active.current) return;
+      setSpeaker(who);
+      groupLog.current = [...groupLog.current, { id: who.id, name: who.name, text }].slice(-40);
+      setLastReply(text);
+      setPhase("speaking");
+      if (save) appendChat(who.id, [{ role: "assistant", content: text, via: "call" }]);
+      await speakRef.current(text);
+    },
+    [setSpeaker]
+  );
+
+  const respondGroup = useCallback(
+    async (text: string) => {
+      const team = group ?? [];
+      const n = norm(text);
+      const named = mentioned(text, team);
+      const current = speakerRef.current;
+      groupLog.current = [...groupLog.current, { id: "user", name: "مصعب", text }].slice(-40);
+      // «حوّلني على فلان»: المتحدث الحالي يحوّلك، ثم يرحب بك الزميل
+      if (named.length && TRANSFER.test(n) && named[0].id !== current.id) {
+        const to = named[0];
+        await say(current, `أبشر، أحولك على ${to.name}.`, false);
+        await say(to, `هلا والله أستاذ مصعب، معك ${to.name}. تفضل.`, false);
+        return;
+      }
+      let speakers: Person[];
+      if (named.length) speakers = named.slice(0, 3);
+      else if (EVERYONE.test(n)) {
+        // سؤال للجميع: يرد المتحدث الحالي ثم زميلان بالتناوب
+        const others = team.filter((p) => p.id !== current.id);
+        const pick = [0, 1].map((i) => others[(rotate.current + i) % Math.max(1, others.length)]).filter(Boolean);
+        rotate.current += 2;
+        speakers = [current, ...pick.filter((p, i, a) => a.findIndex((q) => q.id === p.id) === i)];
+      } else speakers = [current];
+      for (const who of speakers) {
+        if (!active.current) return;
+        setSpeaker(who);
+        setPhase("thinking");
+        const reply = await groupReply(who);
+        appendChat(who.id, [{ role: "user", content: text, via: "call" }]);
+        await say(who, reply);
+      }
+    },
+    [group, groupReply, say, setSpeaker]
+  );
+
   const respond = useCallback(
     async (text: string) => {
       if (!text.trim()) return;
       setHeard(text);
       setPhase("thinking");
+      if (group) {
+        try {
+          await respondGroup(text);
+        } catch (e) {
+          setError((e as Error).message);
+        }
+        if (active.current) listenRef.current();
+        return;
+      }
       history.current = [...history.current, { role: "user" as const, content: text }].slice(-20);
       try {
         const { reply } = await postJSON<{ reply: string }>("/api/employee", {
@@ -248,7 +370,7 @@ export default function CallDialog({
       }
       if (active.current) listenRef.current();
     },
-    [person.id, speak]
+    [person.id, speak, group, respondGroup]
   );
 
   // ─── الاستماع: نسجّل صوتك من الميكروفون، ونكشف بداية كلامك ونهايته، ثم نحوّله لنص من الخادم ───
@@ -382,7 +504,9 @@ export default function CallDialog({
   // بداية المكالمة: الموظف يرد بالتحية
   useEffect(() => {
     active.current = true;
-    const greet = `هلا والله، معك ${person.name}. تفضل، وش تبي؟`;
+    const greet = isGroup
+      ? `هلا والله أستاذ مصعب، المجلس مفتوح والفريق كله يسمعك. كلّم أي واحد باسمه، أو قل حوّلني على فلان.`
+      : `هلا والله، معك ${first.name}. تفضل، وش تبي؟`;
     const t = setTimeout(async () => {
       setLastReply(greet);
       setPhase("speaking");
@@ -402,7 +526,7 @@ export default function CallDialog({
       tapResolve.current?.();
     };
     // التحية مرة واحدة فقط عند بداية المكالمة
-  }, [person.name]);
+  }, [first.name, isGroup]);
 
   function toggleMute() {
     const next = !muted;
@@ -429,9 +553,31 @@ export default function CallDialog({
     <div className="fixed inset-0 z-[2100] grid place-items-center bg-black/70 sm:p-4">
       <div className="relative flex h-full max-h-[100svh] w-full max-w-2xl min-[1800px]:max-w-5xl flex-col overflow-auto bg-zinc-900 text-white shadow-2xl sm:h-auto sm:rounded-3xl">
         <div className="flex items-center justify-between px-5 py-3 text-sm opacity-80">
-          <span>📞 مكالمة {withVideo ? "فيديو" : "صوتية"} مع {person.name}</span>
+          <span>{group ? "🎙️ المجلس الصوتي — الفريق كله يسمعك" : `📞 مكالمة ${withVideo ? "فيديو" : "صوتية"} مع ${person.name}`}</span>
           <span dir="ltr">{mm}:{ss}</span>
         </div>
+        {group && (
+          <div className="flex gap-2 overflow-x-auto px-4 pb-3" aria-label="الحاضرون">
+            {group.map((p) => {
+              const on = p.id === person.id;
+              return (
+                <button
+                  key={p.id}
+                  title={`تحدّث مع ${p.name}`}
+                  onClick={() => {
+                    if (phase === "speaking" || phase === "thinking") return;
+                    setSpeaker(p);
+                    setLastReply(`أنت الآن تتحدث مع ${p.name}.`);
+                  }}
+                  className={`flex w-16 shrink-0 flex-col items-center gap-1 rounded-xl p-1 text-[0.6875rem] transition ${on ? "bg-emerald-500/25 ring-2 ring-emerald-400" : "opacity-70 hover:opacity-100"}`}
+                >
+                  <Avatar person={p} size={40} speaking={on && phase === "speaking"} />
+                  <span className="w-full truncate">{p.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         {withVideo ? (
           // مكالمة فيديو: صورة الموظف الحية تملأ الشاشة، ومعاينتك في الزاوية
           <div
@@ -460,7 +606,7 @@ export default function CallDialog({
                 className="absolute bottom-3 left-3 h-24 w-36 rounded-xl border border-white/25 object-cover shadow-lg sm:h-28 sm:w-44"
                 style={{ transform: "scaleX(-1)" }}
               />
-            ) : (
+            ) : group ? null : (
               <div className="absolute bottom-3 left-3 grid h-24 w-36 place-items-center rounded-xl border border-white/25 bg-black/50 text-xs sm:h-28 sm:w-44">
                 كاميرتك مغلقة
               </div>
@@ -505,7 +651,7 @@ export default function CallDialog({
               <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
                 <div className="h-full rounded-full bg-emerald-400 transition-[width] duration-75" style={{ width: `${Math.round(level * 100)}%` }} />
               </div>
-              <span>تكلّم ثم توقّف لحظة ليرد عليك</span>
+              <span>{group ? `تكلّم والكل يسمع • نادِ أحداً باسمه أو قل «حوّلني على…»` : "تكلّم ثم توقّف لحظة ليرد عليك"}</span>
             </div>
           )}
           {needTap && (
